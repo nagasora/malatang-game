@@ -1,0 +1,12 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!1045 &1
+EditorBuildSettings:
+  m_ObjectHideFlags: 0
+  serializedVersion: 2
+  m_Scenes:
+  - enabled: 1
+    path: Assets/MalatangStory/Scenes/Restaurant.unity
+    guid: dd182a19180234cbc8da6901c2f3f311
+  m_configObjects: {}
+  m_UseUCBPForAssetBundles: 0

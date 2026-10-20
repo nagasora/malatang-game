@@ -1,0 +1,13 @@
+{
+  "name": "MalatangStory.Ingredients.Tests",
+  "references": [
+    "MalatangStory.Ingredients",
+    "MalatangStory.Game"
+  ],
+  "includePlatforms": [
+    "Editor"
+  ],
+  "optionalUnityReferences": [
+    "TestAssemblies"
+  ]
+}
