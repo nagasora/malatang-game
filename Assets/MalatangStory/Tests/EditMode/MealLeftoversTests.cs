@@ -204,7 +204,7 @@ namespace MalatangStory.Ingredients.Tests
             sim.State.saveVersion = 8; order.visualState = visual; order.eatSeconds = 12;
             sim.State.dirtyTables.Add(DiningLayout.TableOfSeat(order.seat));
             SaveMigration.Migrate(sim.State);
-            Assert.AreEqual(9, sim.State.saveVersion); Assert.AreEqual(12f, order.eatSeconds);
+            Assert.AreEqual(GameState.CurrentVersion, sim.State.saveVersion); Assert.AreEqual(12f, order.eatSeconds);
             Assert.AreEqual(visual, order.visualState); Assert.IsFalse(order.mealFinished); Assert.IsEmpty(sim.State.mealRemains);
         }
 

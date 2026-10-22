@@ -36,6 +36,7 @@ namespace MalatangStory.Game
                 || x.selected.Count == 0 || x.selected.Any(id => !ids.Contains(id)) || !seen.Add(x.seat));
             foreach (MealRemains remains in state.mealRemains)
             {
+                remains.garnishStrokes = GarnishStroke.Normalize(remains.garnishStrokes);
                 if (!Content.Soups.Any(x => x.Id == remains.soup)) remains.soup = "mala";
                 remains.spice = Math.Max(0, Math.Min(5, remains.spice));
                 remains.condiments ??= new List<string>();

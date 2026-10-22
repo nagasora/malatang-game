@@ -47,6 +47,7 @@ namespace MalatangStory.Game
             App.UI.Speech("overlay-regression", () => App.World.Player.position + Vector3.up * 1.8f, "おいしい一杯を楽しみにしています。", 25);
             yield return CaptureLayouts("03d-overlay-regression");
             App.Paused = false;
+            yield return CaptureMovement();
             var order = sim.Active.Single();
             App.OpenRegister(order.id);
             yield return new WaitForSeconds(6);
@@ -90,7 +91,21 @@ namespace MalatangStory.Game
             {
                 for (int i = 0; i < order.selected.Count; i++)
                     if (order.dropTimes[i] < 0 && order.heatSeconds >= slowest - sim.Catalog.Get(order.selected[i]).cookingSeconds) sim.DropIngredient(order.id, i);
-                if (guard == 30) yield return Capture("05-cooking-boil");
+                if (guard == 30)
+                {
+                    yield return Capture("05-cooking-boil");
+                    App.Paused = true; bool tutorialComplete = sim.State.tutorialComplete;
+                    try
+                    {
+                        sim.State.tutorialComplete = true;
+                        for (int gauge = 1; gauge <= 2; gauge++)
+                        {
+                            sim.State.gaugeMode = gauge; App.UI.Refresh(); yield return new WaitForSeconds(.2f);
+                            yield return Capture("05b-cooking-gauge-" + gauge);
+                        }
+                    }
+                    finally { sim.State.tutorialComplete = tutorialComplete; sim.State.gaugeMode = 0; App.Paused = false; App.UI.Refresh(); }
+                }
                 sim.Tick(.25f);
                 if (guard % 8 == 0) yield return null;
             }
@@ -593,6 +608,22 @@ namespace MalatangStory.Game
             }
             canvas.enabled = true;
             Destroy(root);
+        }
+
+        private IEnumerator CaptureMovement()
+        {
+            Vector3 original = App.World.Player.position;
+            var agent = App.World.Player.GetComponent<UnityEngine.AI.NavMeshAgent>();
+            try
+            {
+                yield return Capture("03e-movement-0");
+                App.World.TouchMovement = new Vector2(0, 1);
+                yield return new WaitForSeconds(.06f); yield return Capture("03e-movement-1");
+                yield return new WaitForSeconds(.06f); yield return Capture("03e-movement-2");
+                App.World.TouchMovement = Vector2.zero;
+                yield return new WaitForSeconds(.1f); yield return Capture("03e-movement-3");
+            }
+            finally { App.World.TouchMovement = Vector2.zero; agent.Warp(original); }
         }
 
         /// <summary>タブレットと携帯の縦横比で撮影し、元のウィンドウ寸法へ戻す。</summary>

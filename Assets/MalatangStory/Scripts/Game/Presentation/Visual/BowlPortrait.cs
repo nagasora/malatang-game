@@ -41,7 +41,7 @@ namespace MalatangStory.Game
         public static Texture2D Get(AlbumEntry entry)
         {
             if (entry == null) throw new ArgumentNullException(nameof(entry));
-            return GetPortrait(entry.soup, entry.spice, entry.ingredients, entry.condiments);
+            return GetPortrait(entry.soup, entry.spice, entry.ingredients, entry.condiments, entry.garnishStrokes);
         }
 
         /// <summary>
@@ -53,7 +53,7 @@ namespace MalatangStory.Game
         {
             if (order == null) throw new ArgumentNullException(nameof(order));
             string soupId = string.IsNullOrEmpty(order.chosenSoup) ? order.soup : order.chosenSoup;
-            return GetPortrait(soupId, order.chosenSpice, order.selected, order.condiments);
+            return GetPortrait(soupId, order.chosenSpice, order.selected, order.condiments, order.garnishStrokes);
         }
 
         /// <summary>キャッシュ画像と撮影台を破棄します。表示中の UI は破棄後に画像を再取得してください。</summary>
@@ -93,7 +93,7 @@ namespace MalatangStory.Game
         }
 
         /// <summary>長さ付きの内容キーで画像を再利用し、成功した撮影だけを登録します。</summary>
-        private static Texture2D GetPortrait(string soupId, int spice, List<string> ingredients, List<string> condiments)
+        private static Texture2D GetPortrait(string soupId, int spice, List<string> ingredients, List<string> condiments, List<GarnishStroke> strokes)
         {
             if (ingredients == null) throw new ArgumentException("具材一覧がありません。", nameof(ingredients));
             if (condiments == null) throw new ArgumentException("調味料一覧がありません。", nameof(condiments));
@@ -103,6 +103,7 @@ namespace MalatangStory.Game
             AppendKey(keyBuilder, spice.ToString(System.Globalization.CultureInfo.InvariantCulture));
             AppendListKey(keyBuilder, ingredients);
             AppendListKey(keyBuilder, condiments);
+            GarnishStroke.AppendKey(keyBuilder, strokes);
             string key = keyBuilder.ToString();
             if (Images.TryGetValue(key, out Texture2D cached) && cached != null)
             {
@@ -117,7 +118,7 @@ namespace MalatangStory.Game
             {
                 TrimCache(null, CacheCapacity - 1);
                 EnsureStudio();
-                image = Capture(soup, spice, ingredients, condiments, CustomerDirector.StableHash(key));
+                image = Capture(soup, spice, ingredients, condiments, CustomerDirector.StableHash(key), strokes);
                 Images[key] = image;
                 TouchCache(key);
                 return image;
@@ -236,7 +237,7 @@ namespace MalatangStory.Game
         }
 
         /// <summary>提供用の器と同じ寸法・盛り付け計算で、濡れた茹で上がり具材を配置します。</summary>
-        private static void BuildBowl(Transform parent, SoupDefinition soup, int spice, List<string> ingredients, List<string> condiments, int seed)
+        private static void BuildBowl(Transform parent, SoupDefinition soup, int spice, List<string> ingredients, List<string> condiments, int seed, List<GarnishStroke> strokes)
         {
             Mesh mesh = MeshFactory.Bowl();
             GameObject bowl = StoreBuilder.Part("Portrait Bowl", mesh, MaterialLibrary.Lit(KitchenStation.BowlGlaze, .8f),
@@ -244,7 +245,7 @@ namespace MalatangStory.Game
             float soupHeight = mesh.bounds.size.y * .72f;
             float surfaceRadius = soup.Id == "dry" ? .32f : .44f;
             SoupVisuals.CreateSurface(bowl.transform, soup.Id, spice, surfaceRadius, soupHeight, false, false);
-            Transform garnishes = SoupVisuals.BuildGarnishes(bowl.transform, condiments, spice, seed, surfaceRadius);
+            Transform garnishes = SoupVisuals.BuildGarnishes(bowl.transform, condiments, spice, seed, surfaceRadius, strokes);
             garnishes.localPosition = Vector3.up * (soupHeight + .006f);
             float localScale = PieceScale / Mathf.Max(.0001f, bowl.transform.localScale.x);
             List<PlatingInput> inputs = new List<PlatingInput>();
@@ -324,7 +325,7 @@ namespace MalatangStory.Game
         }
 
         /// <summary>同期撮影し、成功・失敗にかかわらず環境と照明を復元して一時リソースを解放します。</summary>
-        private static Texture2D Capture(SoupDefinition soup, int spice, List<string> ingredients, List<string> condiments, int seed)
+        private static Texture2D Capture(SoupDefinition soup, int spice, List<string> ingredients, List<string> condiments, int seed, List<GarnishStroke> strokes)
         {
             GameObject model = null;
             RenderTexture target = null;
@@ -338,7 +339,7 @@ namespace MalatangStory.Game
             {
                 model = new GameObject("Portrait Model") { hideFlags = HideFlags.DontSave };
                 model.transform.SetParent(studio.transform, false);
-                BuildBowl(model.transform, soup, spice, ingredients, condiments, seed);
+                BuildBowl(model.transform, soup, spice, ingredients, condiments, seed, strokes);
                 FrameModel(IsolateModel(model));
                 transparentBlends = new TransparentBlendState(model);
                 target = RenderTexture.GetTemporary(ImageSize, ImageSize, 24, RenderTextureFormat.ARGB32, RenderTextureReadWrite.Linear);

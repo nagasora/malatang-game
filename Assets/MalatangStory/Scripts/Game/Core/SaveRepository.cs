@@ -229,6 +229,13 @@ namespace MalatangStory.Game
                 s.mealRemains = new List<MealRemains>();
                 if (s.orders != null) foreach (CustomerOrder order in s.orders.Where(x => x != null)) { order.mealFinished = false; order.leftovers = new MealLeftoverResult(); }
             }
+            if (s.saveVersion <= 9)
+            {
+                s.reducedMotion = false; s.snapCamera = false; s.leftHanded = false; s.gaugeMode = 0;
+                s.interactKey = "E"; s.buildRotateKey = "T";
+                if (s.orders != null) foreach (var order in s.orders)
+                    if (order != null) { order.handRhythm = 0; order.lastHandShake = -1; order.usedVisibleGauge = true; order.expertBowl = false; }
+            }
             SaveLimits.Normalize(s);
             Normalize(s);
             if (s.saveVersion >= GameState.CurrentVersion) return;

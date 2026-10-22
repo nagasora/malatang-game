@@ -24,6 +24,11 @@ namespace MalatangStory.Game
         public WorldTarget Set(Station station, int target = -1) { Station = station; Target = target; return this; }
     }
 
+    public sealed class CustomerTarget : MonoBehaviour
+    {
+        public string OrderId;
+    }
+
     /// <summary>内装画面でのポインター位置の判定結果。</summary>
     public struct BuildPick
     {
@@ -50,6 +55,14 @@ namespace MalatangStory.Game
         public Station? TutorialTarget;
         public string CarriedOrderId { get; private set; }
 
+        public const int InteractionLayer = 24, CustomerLayer = 25;
+        private Vector3 manualVelocity;
+        private readonly List<RaycastResult> uiHits = new List<RaycastResult>(16);
+        private PointerEventData uiPointer;
+        private EventSystem uiEventSystem;
+        private Transform destinationMarker, unavailableMarker, interactionMarker;
+        private float unavailableSeconds, footstepDistance, lastMovementSpeed = 3.8f;
+        private NavMeshPath walkingPath;
         private Font font;
         private StoreBuilder store;
         private string themeId;
@@ -90,6 +103,7 @@ namespace MalatangStory.Game
         public void Initialize(GameApplication app, Font font)
         {
             App = app; this.font = font;
+            walkingPath = new NavMeshPath();
             if (!EnhancedTouchSupport.enabled) EnhancedTouchSupport.Enable();
             var cameraObject = new GameObject("Restaurant Camera");
             cameraObject.transform.SetParent(transform, false);
@@ -105,10 +119,17 @@ namespace MalatangStory.Game
             playerRig.transform.position = new Vector3(s.playerX, 0, s.playerZ == 0 && s.playerX == 0 ? StoreLayout.KitchenSpot.z - 1.2f : s.playerZ);
             playerAgent = playerRig.gameObject.AddComponent<NavMeshAgent>();
             AgentDirector.Configure(playerAgent, 3.8f);
+            playerAgent.avoidancePriority = 10;
             WarpToNav(playerAgent, playerRig.transform.position);
             agents = new AgentDirector(this, transform);
             agents.RebuildStaff();
             marker = BuildMarker(UIKit.Gold, 1.2f);
+            destinationMarker = BuildWalkMarker(UIKit.Jade, .55f);
+            unavailableMarker = BuildWalkMarker(UIKit.Bad, .55f);
+            interactionMarker = BuildWalkMarker(UIKit.Gold, .8f);
+            destinationMarker.name = "Walk Destination"; unavailableMarker.name = "Unreachable Destination";
+            store.Label("×", Vector3.up * .15f, Quaternion.Euler(90, 0, 0), .18f, UIKit.Bad, unavailableMarker);
+            destinationMarker.gameObject.SetActive(false); unavailableMarker.gameObject.SetActive(false); interactionMarker.gameObject.SetActive(false);
             firstPerson = s.firstPerson;
             lookYaw = playerRig.transform.eulerAngles.y;
             PlaceCamera(true);
@@ -177,7 +198,8 @@ namespace MalatangStory.Game
             {
                 var go = new GameObject(name + " Target");
                 go.transform.SetParent(store.Root, false); go.transform.position = center;
-                go.AddComponent<BoxCollider>().size = size;
+                go.layer = InteractionLayer;
+                var collider = go.AddComponent<BoxCollider>(); collider.size = size; collider.isTrigger = true;
                 go.AddComponent<WorldTarget>().Set(station);
             }
             Target("Register", StoreLayout.RegisterTop + new Vector3(0, .1f, 0), new Vector3(1.2f, 1.0f, 1.0f), Station.Register);
@@ -289,7 +311,24 @@ namespace MalatangStory.Game
 
         // ───────── 移動と設備 ─────────
 
-        public bool WalkTo(Vector3 destination) => WalkTo(destination, out _);
+        public bool WalkTo(Vector3 destination)
+        {
+            bool success = WalkTo(destination, out _);
+            if (!success) CannotReach(destination);
+            return success;
+        }
+
+        private void CannotReach(Vector3 point)
+        {
+            pendingAction = null; pendingTarget = null; manualVelocity = Vector3.zero;
+            if (playerAgent != null && playerAgent.isOnNavMesh) playerAgent.ResetPath();
+            destinationMarker.gameObject.SetActive(false);
+            App.Audio.Play(Sfx.Cancel, .4f);
+            unavailableMarker.position = point + Vector3.up * .06f;
+            unavailableSeconds = .8f;
+            unavailableMarker.gameObject.SetActive(true);
+            App.UI.Toast("近づけません。通路を確認してください。", IconKind.Info);
+        }
 
         /// <summary>歩ける位置へ補正して歩き出す。actual は実際の目的地（到着判定に使う）。</summary>
         private bool WalkTo(Vector3 destination, out Vector3 actual)
@@ -297,10 +336,11 @@ namespace MalatangStory.Game
             actual = destination;
             if (playerAgent == null || !playerAgent.isOnNavMesh) return false;
             if (!NavMesh.SamplePosition(destination, out var hit, .9f, NavMesh.AllAreas)) return false;
-            var path = new NavMeshPath();
-            if (!playerAgent.CalculatePath(hit.position, path) || path.status != NavMeshPathStatus.PathComplete) return false;
-            playerAgent.SetPath(path);
+            if (!playerAgent.CalculatePath(hit.position, walkingPath) || walkingPath.status != NavMeshPathStatus.PathComplete) return false;
+            playerAgent.SetPath(walkingPath);
+            manualVelocity = Vector3.zero;
             actual = hit.position;
+            if (destinationMarker != null) { destinationMarker.position = actual + Vector3.up * .035f; destinationMarker.gameObject.SetActive(true); }
             return true;
         }
 
@@ -320,21 +360,28 @@ namespace MalatangStory.Game
             }
         }
 
-        /// <summary>設備まで歩き、着いたら onArrive を実行する（道が無ければすぐ実行）。</summary>
+        /// <summary>設備まで歩き、到着してから操作する。</summary>
         public void Visit(Station station, Action onArrive = null, int target = -1)
         {
+            pendingAction = null; pendingTarget = null;
             Vector3 spot = StationSpot(station, target);
             Action action = onArrive ?? (() => App.Interact(station, target));
-            if (Vector3.Distance(Flat(Player.position), Flat(spot)) < .5f || !WalkTo(spot, out var actual)) { action(); return; }
+            if (Vector3.Distance(Flat(Player.position), Flat(spot)) < .5f) { action(); return; }
+            if (!WalkTo(spot, out var actual))
+            {
+                if (station == Station.Kitchen || station == Station.Register) action();
+                else CannotReach(spot);
+                return;
+            }
             pendingTarget = actual; pendingAction = action;
         }
 
         /// <summary>席まで歩き、着いたら onArrive を実行する。</summary>
         public void VisitSeat(int seatId, Action onArrive)
         {
-            if (!Furniture.TryGetSeat(seatId, out var seat)) { onArrive(); return; }
+            if (!Furniture.TryGetSeat(seatId, out var seat)) { CannotReach(Player.position); return; }
             Vector3 approach = seat.Position + (seat.Position - seat.TableSpot).normalized * .35f;
-            if (!WalkTo(approach, out var actual) && !WalkTo(seat.Position, out actual)) { onArrive(); return; }
+            if (!WalkTo(approach, out var actual) && !WalkTo(seat.Position, out actual)) { CannotReach(seat.Position); return; }
             pendingTarget = actual; pendingAction = onArrive;
         }
 
@@ -351,7 +398,7 @@ namespace MalatangStory.Game
             {
                 // 一人称では手が画面外になるため、丼をカメラの前に持つ。
                 carriedBowl.transform.SetParent(View.transform, false);
-                carriedBowl.transform.localPosition = new Vector3(.12f, -.3f, .62f);
+                carriedBowl.transform.localPosition = new Vector3(.25f, -.36f, .72f);
                 carriedBowl.transform.localRotation = Quaternion.Euler(18, 0, 0);
             }
             else playerRig.SetCarry(carriedBowl.transform);
@@ -368,11 +415,14 @@ namespace MalatangStory.Game
             if (Player == null || Mode != WorldMode.Overview) return null;
             if (FirstPersonActive && LookTarget != null) { target = LookTarget.Target; return LookTarget.Station; }
             Vector3 p = Flat(Player.position);
-            Station? best = null; float bestDistance = 1.7f; int bestTarget = -1;
+            Station? best = null; float bestDistance = float.MaxValue; int bestTarget = -1;
             void Consider(Station station, Vector3 spot, int t = -1)
             {
                 float d = Vector3.Distance(p, Flat(spot));
-                if (d < bestDistance) { bestDistance = d; best = station; bestTarget = t; }
+                if (d > 1.7f) return;
+                Vector3 direction = (Flat(spot) - p).normalized;
+                float score = MovementFeel.TargetScore(d, Vector3.Dot(Player.forward, direction));
+                if (score < bestDistance) { bestDistance = score; best = station; bestTarget = t; }
             }
             Consider(Station.Register, StoreLayout.RegisterStaff);
             Consider(Station.Kitchen, StoreLayout.KitchenSpot);
@@ -509,6 +559,13 @@ namespace MalatangStory.Game
             UpdatePlayerVisibility();
         }
 
+        private Transform BuildWalkMarker(Color color, float size)
+        {
+            var root = new GameObject("Ground Ring").transform; root.SetParent(transform, false);
+            StoreBuilder.Part("Ring", MeshFactory.Torus(size * .5f, .018f, 32, 6), MaterialLibrary.Emissive(color, color, .6f), Vector3.zero, Vector3.one, root, null, false);
+            return root;
+        }
+
         private Transform BuildMarker(Color color, float size)
         {
             var root = new GameObject("Marker").transform;
@@ -624,8 +681,13 @@ namespace MalatangStory.Game
             if (playerAgent.isOnNavMesh) playerAgent.isStopped = paused;
             else WarpToNav(playerAgent, playerRig.transform.position);
             if (!paused) HandleInput(dt);
-            playerRig.SetMoveSpeed(playerAgent.isOnNavMesh ? playerAgent.velocity.magnitude : 0);
+            playerRig.SetMoveSpeed(playerAgent.isOnNavMesh ? Mathf.Max(playerAgent.velocity.magnitude, manualVelocity.magnitude) : 0);
             UpdatePlayerVisibility();
+            if (!paused)
+            {
+                footstepDistance += Mathf.Max(playerAgent.velocity.magnitude, manualVelocity.magnitude) * dt;
+                if (footstepDistance >= .65f) { footstepDistance -= .65f; App.Audio.PlayAt(Sfx.Footstep, Player.position, .15f); }
+            }
             if (store.Ceiling != null && store.Ceiling.gameObject.activeSelf != FirstPersonActive) store.Ceiling.gameObject.SetActive(FirstPersonActive);
             if (focusPlayer) playerRig.transform.rotation = Quaternion.Slerp(playerRig.transform.rotation, Quaternion.Euler(0, 180, 0), dt * 8);
             else if (Mode == WorldMode.Cooking && playerAgent.velocity.magnitude < .1f) { playerRig.SetPose(CharacterPose.Cook); playerRig.LookAt(Kitchen.Focus); }
@@ -637,11 +699,23 @@ namespace MalatangStory.Game
             Kitchen.Update(dt, Mode == WorldMode.Cooking);
             if (CarriedOrderId != null && sim.Find(CarriedOrderId)?.stage != OrderStage.Ready) CarryBowl(null);
             UpdateMarkers();
+            UpdateInteractionMarker(dt);
             PlaceCamera(false);
             UpdateCutaway();
             UpdateFocusFurnitureVisibility();
             var s = sim.State;
             s.playerX = Player.position.x; s.playerZ = Player.position.z; s.cameraYaw = yaw;
+        }
+
+        private void UpdateInteractionMarker(float dt)
+        {
+            unavailableSeconds -= dt;
+            if (unavailableMarker != null && unavailableSeconds <= 0) unavailableMarker.gameObject.SetActive(false);
+            if (destinationMarker != null && destinationMarker.gameObject.activeSelf && (!playerAgent.hasPath || Vector3.Distance(Flat(Player.position), Flat(destinationMarker.position)) < .4f)) destinationMarker.gameObject.SetActive(false);
+            var station = NearestStation(out int target);
+            bool show = station.HasValue && Mode == WorldMode.Overview;
+            interactionMarker.gameObject.SetActive(show);
+            if (show) interactionMarker.position = StationSpot(station.Value, target) + Vector3.up * .04f;
         }
 
         private void UpdatePending()
@@ -661,12 +735,25 @@ namespace MalatangStory.Game
         {
             var sim = App.Simulation;
             Vector2 move = TouchMovement;
+            var gamepad = Gamepad.current;
+            if (gamepad != null && Mode == WorldMode.Overview)
+            {
+                move += gamepad.leftStick.ReadValue();
+                Vector2 look = gamepad.rightStick.ReadValue();
+                if (FirstPersonActive) { lookYaw += look.x * 110 * dt; lookPitch = Mathf.Clamp(lookPitch - look.y * 80 * dt, -55, 60); }
+                else yaw += look.x * 90 * dt;
+                if (gamepad.buttonSouth.wasPressedThisFrame)
+                {
+                    var station = NearestStation(out int id);
+                    if (station.HasValue) App.Interact(station.Value, id);
+                }
+            }
             var keyboard = Keyboard.current;
             if (keyboard != null && Mode == WorldMode.Overview)
             {
                 move += new Vector2((keyboard.dKey.isPressed || keyboard.rightArrowKey.isPressed ? 1 : 0) - (keyboard.aKey.isPressed || keyboard.leftArrowKey.isPressed ? 1 : 0),
                     (keyboard.wKey.isPressed || keyboard.upArrowKey.isPressed ? 1 : 0) - (keyboard.sKey.isPressed || keyboard.downArrowKey.isPressed ? 1 : 0));
-                if (keyboard.eKey.wasPressedThisFrame || keyboard.spaceKey.wasPressedThisFrame)
+                if (Enum.TryParse<Key>(sim.State.interactKey, out var interactKey) && keyboard[interactKey].wasPressedThisFrame || keyboard.spaceKey.wasPressedThisFrame)
                 {
                     var near = NearestStation(out int target);
                     if (near.HasValue) App.Interact(near.Value, target);
@@ -675,16 +762,25 @@ namespace MalatangStory.Game
                 float turn = (keyboard.rKey.isPressed ? 1 : 0) - (keyboard.qKey.isPressed ? 1 : 0);
                 if (FirstPersonActive) lookYaw += turn * 110 * dt; else yaw += turn * 90 * dt;
             }
-            if (Mode == WorldMode.Overview && move.sqrMagnitude > .01f && playerAgent.isOnNavMesh)
+            if (Mode != WorldMode.Overview) { manualVelocity = Vector3.zero; playerRig.MotionLean = 0; }
+            if (Mode == WorldMode.Overview && (move.sqrMagnitude > .01f || manualVelocity.sqrMagnitude > .0001f) && playerAgent.isOnNavMesh)
             {
                 pendingAction = null; pendingTarget = null;
                 if (playerAgent.hasPath) playerAgent.ResetPath();
                 Quaternion heading = Quaternion.Euler(0, FirstPersonActive ? lookYaw : View.transform.eulerAngles.y, 0);
                 Vector3 right = heading * Vector3.right, forward = heading * Vector3.forward;
                 Vector3 delta = Vector3.ClampMagnitude(right * move.x + forward * move.y, 1);
-                playerAgent.Move(delta * playerAgent.speed * (FirstPersonActive ? .8f : 1f) * dt);
-                if (!FirstPersonActive) playerRig.transform.rotation = Quaternion.Slerp(playerRig.transform.rotation, Quaternion.LookRotation(delta), dt * 12);
-                playerRig.SetMoveSpeed(delta.magnitude * playerAgent.speed);
+                bool running = (keyboard != null && keyboard.leftShiftKey.isPressed) || TouchMovement.magnitude > .95f || (gamepad != null && gamepad.leftStick.ReadValue().magnitude > .95f);
+                float speed = playerAgent.speed * (FirstPersonActive ? .8f : 1f) * (running ? 1.35f : 1);
+                if (delta.sqrMagnitude > .001f) lastMovementSpeed = speed; else speed = lastMovementSpeed;
+                Vector3 desired = delta * speed;
+                if (Vector3.Dot(manualVelocity, desired) < 0) desired *= .55f;
+                manualVelocity.x = MovementFeel.Step(manualVelocity.x, desired.x, dt, speed);
+                manualVelocity.z = MovementFeel.Step(manualVelocity.z, desired.z, dt, speed);
+                playerAgent.Move(manualVelocity * dt);
+                if (!FirstPersonActive && delta.sqrMagnitude > .001f) playerRig.transform.rotation = Quaternion.Slerp(playerRig.transform.rotation, Quaternion.LookRotation(delta), dt * 12);
+                playerRig.MotionLean = sim.State.reducedMotion ? 0 : Mathf.Clamp(Vector3.Dot(Player.right, desired - manualVelocity) * -2, -8, 8);
+                playerRig.SetMoveSpeed(manualVelocity.magnitude);
                 if (!sim.State.tutorialComplete && sim.State.tutorialStep == RestaurantSimulation.Tutorial.Move) sim.TutorialAction(RestaurantSimulation.Tutorial.Move);
             }
             if (!sim.State.tutorialComplete && sim.State.tutorialStep == RestaurantSimulation.Tutorial.Move && playerAgent.velocity.magnitude > .5f) sim.TutorialAction(RestaurantSimulation.Tutorial.Move);
@@ -698,6 +794,8 @@ namespace MalatangStory.Game
             }
             else LookTarget = null;
             HandlePointer();
+            if (App.Simulation.State.snapCamera && !dragging && !pointerPressed && Mode == WorldMode.Overview && !FirstPersonActive)
+                yaw = Mathf.LerpAngle(yaw, Mathf.Round(yaw / 45f) * 45f, 1 - Mathf.Exp(-dt * 4));
         }
 
         private void HandlePointer()
@@ -744,15 +842,28 @@ namespace MalatangStory.Game
                 if (dragging)
                 {
                     Vector2 delta = pointer.delta.ReadValue();
-                    if (FirstPersonActive) { lookYaw += delta.x * .22f; lookPitch = Mathf.Clamp(lookPitch - delta.y * .18f, -55, 60); }
+                    if (FirstPersonActive) ApplyLook(delta);
                     else yaw += delta.x * .25f;
                 }
             }
             if (pointerPressed && released)
             {
                 pointerPressed = false;
-                if (dragging) return;
-                if (!Physics.Raycast(View.ScreenPointToRay(position), out var hit, 120)) return;
+                if (dragging) { dragging = false; return; }
+                Ray ray = View.ScreenPointToRay(position);
+                if (Physics.Raycast(ray, out var customerHit, 120, 1 << CustomerLayer, QueryTriggerInteraction.Collide))
+                {
+                    var customer = customerHit.collider.GetComponent<CustomerTarget>();
+                    if (customer != null)
+                    {
+                        var order = App.Simulation.Find(customer.OrderId);
+                        App.SelectedOrderId = customer.OrderId;
+                        if (order != null) Speak(order.id, string.IsNullOrEmpty(order.reaction) ? order.customerName + "さんの注文票を選びました。" : order.reaction);
+                        App.UI.Refresh();
+                        return;
+                    }
+                }
+                if (!Physics.Raycast(ray, out var hit, 120)) return;
                 var target = hit.collider.GetComponentInParent<WorldTarget>();
                 if (target != null)
                 {
@@ -788,26 +899,37 @@ namespace MalatangStory.Game
             foreach (var touch in Touch.activeTouches)
             {
                 if (uiTouches.Contains(touch.touchId) || touch.phase != UnityEngine.InputSystem.TouchPhase.Moved) continue;
-                lookYaw += touch.delta.x * .22f;
-                lookPitch = Mathf.Clamp(lookPitch - touch.delta.y * .18f, -55, 60);
+                ApplyLook(touch.delta);
             }
+        }
+
+        private void ApplyLook(Vector2 delta)
+        {
+            var settings = App.Simulation.State;
+            lookYaw += delta.x * .22f * settings.lookSensitivity;
+            lookPitch = Mathf.Clamp(lookPitch + delta.y * .18f * settings.lookSensitivity * (settings.invertLook ? 1 : -1), -55, 60);
         }
 
         /// <summary>画面中央の照準の先にある設備を調べる（手の届く範囲だけ）。</summary>
         private void UpdateLookTarget()
         {
-            LookTarget = null;
-            var ray = new Ray(View.transform.position, View.transform.forward);
-            if (!Physics.Raycast(ray, out var hit, 3.2f)) return;
-            LookTarget = hit.collider.GetComponentInParent<WorldTarget>();
+            LookTarget = PickLookTarget(new Ray(View.transform.position, View.transform.forward));
         }
 
-        private static bool OverUI(Vector2 position)
+        public static WorldTarget PickLookTarget(Ray ray)
         {
-            if (EventSystem.current == null) return false;
-            var results = new List<RaycastResult>();
-            EventSystem.current.RaycastAll(new PointerEventData(EventSystem.current) { position = position }, results);
-            return results.Count > 0;
+            if (!Physics.SphereCast(ray, .15f, out var hit, 3.2f, 1 << InteractionLayer, QueryTriggerInteraction.Collide)) return null;
+            return hit.collider.GetComponentInParent<WorldTarget>();
+        }
+
+        private bool OverUI(Vector2 position)
+        {
+            var current = EventSystem.current;
+            if (current == null) return false;
+            if (uiPointer == null || uiEventSystem != current) { uiEventSystem = current; uiPointer = new PointerEventData(current); }
+            uiPointer.Reset(); uiPointer.position = position;
+            uiHits.Clear(); current.RaycastAll(uiPointer, uiHits);
+            return uiHits.Count > 0;
         }
 
         private void PlaceCamera(bool immediate)
@@ -820,18 +942,19 @@ namespace MalatangStory.Game
             switch (Mode)
             {
                 case WorldMode.Title:
-                    titleAngle += Time.deltaTime * 4;
+                    if (!App.Simulation.State.reducedMotion) titleAngle += Time.deltaTime * 4;
                     target = center + new Vector3(0, .6f, 0);
                     position = target + Quaternion.Euler(28, titleAngle - 30, 0) * new Vector3(0, 0, -storeSize * 2.1f);
                     fov = 30;
                     break;
                 case WorldMode.Cooking:
                     var focus = Kitchen.Focus;
-                    position = focus + new Vector3(0, 1.45f, -1.85f);
+                    bool heating = App.Selected != null && App.Selected.stage == OrderStage.Heating;
+                    position = focus + (heating ? new Vector3(0, 1.15f, -1.45f) : new Vector3(0, 1.45f, -1.85f));
                     var shift = new Vector3(.62f, 0, 0);
                     target = focus + shift;
                     position += shift;
-                    fov = 38;
+                    fov = App.Selected != null && App.Selected.stage == OrderStage.Ready && !App.Simulation.State.reducedMotion ? 34 : 38;
                     break;
                 case WorldMode.Register:
                     // レジの内側から、カウンター越しにお客さんを見る（店主の目線）。
@@ -848,6 +971,7 @@ namespace MalatangStory.Game
                     if (FirstPersonActive && Player != null)
                     {
                         position = Player.position + Vector3.up * 1.52f + Quaternion.Euler(0, lookYaw, 0) * Vector3.forward * .12f;
+                        if (!App.Simulation.State.reducedMotion) position.y += Mathf.Sin(Time.time * 10) * Mathf.Clamp01(playerAgent.velocity.magnitude) * .012f;
                         target = position + Quaternion.Euler(lookPitch, lookYaw, 0) * Vector3.forward;
                         fov = 62;
                         break;

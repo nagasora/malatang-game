@@ -194,7 +194,7 @@ namespace MalatangStory.Game
             }
         }
 
-        /// <summary>屋根の切り欠き越しに高い粒子が床へ重なって見えるため、店舗の上空も含めて除去します。</summary>
+        /// <summary>屋外上空の粒子も切り欠き越しに床へ重なるため、俯瞰では床への投影位置も除去判定に含めます。</summary>
         private void ClipIndoorSeasonalParticles()
         {
             if (seasonalParticles == null || seasonalBuffer == null) return;
@@ -203,7 +203,19 @@ namespace MalatangStory.Game
             for (int i = 0; i < count; i++)
             {
                 Vector3 local = transform.InverseTransformPoint(seasonalBuffer[i].position);
-                if (Mathf.Abs(local.x) >= 7.1f || local.z <= streetFront || local.z >= 6f) continue;
+                bool inside = Mathf.Abs(local.x) < 7.1f && local.z > streetFront && local.z < 6f;
+                if (!inside && view != null && view.transform.position.y > 5f)
+                {
+                    Vector3 origin = view.transform.position;
+                    Vector3 direction = seasonalBuffer[i].position - origin;
+                    if (direction.y < -.001f)
+                    {
+                        float distance = (transform.position.y - origin.y) / direction.y;
+                        Vector3 projected = transform.InverseTransformPoint(origin + direction * distance);
+                        inside = Mathf.Abs(projected.x) < 7.1f && projected.z > streetFront && projected.z < 6f;
+                    }
+                }
+                if (!inside) continue;
                 seasonalBuffer[i].remainingLifetime = 0;
                 clipped = true;
             }

@@ -310,7 +310,7 @@ namespace MalatangStory.Game
         }
 
         /// <summary>定義色と形状に基づき、薬味一種類につき一つの描画バッチへ結合します。</summary>
-        public static Transform BuildGarnishes(Transform parent, List<string> condiments, int spice, int seed, float radius = .38f)
+        public static Transform BuildGarnishes(Transform parent, List<string> condiments, int spice, int seed, float radius = .38f, List<GarnishStroke> strokes = null)
         {
             if (condiments == null) throw new ArgumentNullException(nameof(condiments));
             if (float.IsNaN(radius) || float.IsInfinity(radius) || radius <= 0f) throw new ArgumentOutOfRangeException(nameof(radius));
@@ -335,7 +335,18 @@ namespace MalatangStory.Game
                 }
                 geometry.Flush(root, "Floating Garnish", false);
             }
+            if (strokes != null) foreach (var point in strokes) AppendPaintedStroke(root, point, radius);
             return root;
+        }
+
+        public static void AppendPaintedStroke(Transform parent, GarnishStroke point, float radius)
+        {
+            if (point == null || !float.IsFinite(point.x) || !float.IsFinite(point.z) || !Content.TryCondiment(point.id, out var condiment)) return;
+            Material material = MaterialLibrary.Lit(new Color(condiment.R, condiment.G, condiment.B), .7f);
+            bool oil = point.id == Content.ChiliOil;
+            Mesh mesh = oil ? MeshFactory.Torus(.024f, .003f, 12, 4) : MeshFactory.Sphere(5, 8);
+            StoreBuilder.Part("Painted " + point.id, mesh, material, new Vector3(point.x * radius * .9f, .003f, point.z * radius * .9f),
+                oil ? Vector3.one : new Vector3(.025f, .008f, .018f), parent, null, false);
         }
 
         /// <summary>ねぎの輪、香菜の葉、砕いた粒、液体の帯をそれぞれ専用形状で追加します。</summary>

@@ -87,6 +87,7 @@ namespace MalatangStory.Game
         private Transform rightHip;
         private Transform leftKnee;
         private Transform rightKnee;
+        public float MotionLean;
         private Transform handAnchor;
         private Transform leftLid;
         private Transform rightLid;
@@ -412,7 +413,7 @@ namespace MalatangStory.Game
                 }
             }
             body.localPosition = Vector3.Lerp(body.localPosition, position, blend);
-            RotateJoint(body, new Vector3(bodyTilt, 0f, 0f), blend);
+            RotateJoint(body, new Vector3(bodyTilt, 0f, MotionLean), blend);
             RotateJoint(leftShoulder, leftArm, blend);
             RotateJoint(rightShoulder, rightArm, blend);
             RotateJoint(leftHip, leftLeg, blend);

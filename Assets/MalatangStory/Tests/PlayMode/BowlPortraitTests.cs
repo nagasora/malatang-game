@@ -24,6 +24,18 @@ namespace MalatangStory.Tests
         private Action originalClickSound;
         private int originalStartTab;
 
+        [Test]
+        public void PaintedGarnishPositionsArePartOfThePortraitCacheKey()
+        {
+            var order = new CustomerOrder { id = "painted-portrait", chosenSoup = "mala", chosenSpice = 1,
+                selected = new List<string> { "enoki" }, condiments = new List<string> { "garlic" } };
+            Texture2D initial = BowlPortrait.Get(order);
+            order.garnishStrokes.Add(new GarnishStroke { id = "garlic", x = .4f, z = -.3f });
+            Texture2D painted = BowlPortrait.Get(order);
+            Assert.AreNotSame(initial, painted);
+            Assert.AreSame(painted, BowlPortrait.Get(order));
+        }
+
         /// <summary>各テストを空の画像キャッシュで開始し、変更する共有状態を退避します。</summary>
         [SetUp]
         public void SetUp()

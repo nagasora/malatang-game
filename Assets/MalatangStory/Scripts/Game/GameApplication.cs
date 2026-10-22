@@ -136,7 +136,7 @@ namespace MalatangStory.Game
         public void Open(GameScreen screen)
         {
             Screen = screen;
-            if (screen != GameScreen.Pause && screen != GameScreen.Settings && screen != GameScreen.Help) Paused = false;
+            if (screen != GameScreen.Pause && screen != GameScreen.Settings && screen != GameScreen.Accessibility && screen != GameScreen.Help) Paused = false;
             if (screen != GameScreen.Cooking && screen != GameScreen.Register) Simulation.PlayerFocusOrderId = null;
             World.FocusPlayer(screen == GameScreen.Wardrobe);
             World.SetMode(screen == GameScreen.Cooking ? WorldMode.Cooking : screen == GameScreen.Build ? WorldMode.Build
@@ -249,6 +249,7 @@ namespace MalatangStory.Game
         public void ApplySettings()
         {
             var s = Simulation.State;
+            UIKit.TextScale = s.textSize / 20f; UIKit.ReduceMotion = s.reducedMotion;
             QualitySettings.shadows = s.highQuality ? ShadowQuality.All : ShadowQuality.Disable;
             Application.targetFrameRate = Application.isMobilePlatform ? (s.highQuality ? 60 : 30) : 60;
             Audio.EffectsVolume = s.effectsVolume;
@@ -347,7 +348,7 @@ namespace MalatangStory.Game
                 case SimEventKind.HeatingStarted: Audio.Play(Sfx.PotSplash); World.Kitchen?.RebuildBowl(); break;
                 case SimEventKind.Dropped: Audio.Play(Sfx.IngredientDrop, .8f); World.Kitchen?.OnDropped((int)e.Value); break;
                 case SimEventKind.Drained: Audio.Play(Sfx.PotSplash, .8f); World.Kitchen?.RebuildBowl(); break;
-                case SimEventKind.Shaken: Audio.Play(Sfx.StrainerShake); World.Kitchen?.OnShake(); break;
+                case SimEventKind.Shaken: Audio.PlayPitched(Sfx.StrainerShake, 1 + (order?.handRhythm ?? 0) * .08f); World.Kitchen?.OnShake(); break;
                 case SimEventKind.SoupPoured: break;
                 case SimEventKind.Condiment: Audio.Play(Sfx.CondimentShake); World.Kitchen?.OnCondiment(e.Text); break;
                 case SimEventKind.Finished:

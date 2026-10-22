@@ -113,6 +113,10 @@ namespace MalatangStory.Game
         public string review = "";
         public string visualState = "enter";
         public float visualSeconds;
+        public int handRhythm;
+        public float lastHandShake = -1;
+        public bool usedVisibleGauge = true, expertBowl;
+        public List<GarnishStroke> garnishStrokes = new List<GarnishStroke>();
 
         /// <summary>提供済みまたは取消済みで、これ以上進まない注文か。</summary>
         public bool IsClosed => stage == OrderStage.Served || stage == OrderStage.Cancelled;
@@ -294,10 +298,10 @@ namespace MalatangStory.Game
         public bool done;
     }
 
-    /// <summary>ゲーム全体の保存状態（保存形式 v9）。</summary>
+    /// <summary>ゲーム全体の保存状態（保存形式 v10）。</summary>
     [Serializable] public sealed class GameState
     {
-        public const int CurrentVersion = 9;
+        public const int CurrentVersion = 10;
         public int saveVersion = CurrentVersion;
         public string storeId = "store-001";
         public string storeName = "麻辣湯の小さなお店";
@@ -376,6 +380,10 @@ namespace MalatangStory.Game
         public string marketIngredient = "";
         /// <summary>当日の限定5個を購入済みか。</summary>
         public bool marketPurchased;
+
+        public bool reducedMotion, snapCamera, leftHanded;
+        public int gaugeMode;
+        public string interactKey = "E", buildRotateKey = "T";
 
         /// <summary>設備レベルを返す（未購入は鍋・保管棚が1、その他は0）。</summary>
         public int EquipmentLevel(string id)

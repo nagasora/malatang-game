@@ -26,6 +26,9 @@ namespace MalatangStory.Game
             s.playerX = Finite(s.playerX, -30, 30); s.playerZ = Finite(s.playerZ, -50, 20);
             s.cameraYaw = Finite(s.cameraYaw, -360, 360);
             s.musicVolume = Finite(s.musicVolume, 0, 1); s.effectsVolume = Finite(s.effectsVolume, 0, 1);
+            s.gaugeMode = (int)Clamp(s.gaugeMode, 0, 2);
+            if (s.interactKey != "E" && s.interactKey != "F" && s.interactKey != "G") s.interactKey = "E";
+            if (s.buildRotateKey != "T" && s.buildRotateKey != "Y" && s.buildRotateKey != "R") s.buildRotateKey = "T";
             s.textSize = (int)Clamp(s.textSize, 16, 28);
             s.shopLevel = (int)Clamp(s.shopLevel, 1, Content.MaxShopLevel);
             s.nextOrderNumber = (int)Clamp(s.nextOrderNumber, 1, 100000000);
@@ -41,6 +44,7 @@ namespace MalatangStory.Game
             s.orders.RemoveAll(o => o == null || string.IsNullOrEmpty(o.id) || !orders.Add(o.id));
             foreach (var o in s.orders)
             {
+                o.garnishStrokes = GarnishStroke.Normalize(o.garnishStrokes);
                 o.customerName = PlayerText.Clean(o.customerName, 32); o.review = PlayerText.Clean(o.review, 300);
                 o.reaction = PlayerText.Clean(o.reaction, 300);
                 o.requested = Bound(o.requested, MaximumItems); o.requested.RemoveAll(x => !ids.Contains(x));
@@ -53,6 +57,7 @@ namespace MalatangStory.Game
                 o.dislikedCondiments = Bound(o.dislikedCondiments, MaximumItems); o.pairings = Bound(o.pairings, MaximumItems);
                 o.heatSeconds = Finite(o.heatSeconds, 0, 10000); o.elapsed = Finite(o.elapsed, 0, 10000);
                 o.patience = Finite(o.patience, 1, 10000); o.visualSeconds = Finite(o.visualSeconds, 0, 10000);
+                o.handRhythm = (int)Clamp(o.handRhythm, 0, 3); o.lastHandShake = Finite(o.lastHandShake, -1, 1000000000);
                 o.quality = Finite(o.quality, 0, 100); o.serviceBonus = Finite(o.serviceBonus, -100, 100);
                 o.weighedGrams = Finite(o.weighedGrams, 0, 10000); o.soupMl = Finite(o.soupMl, 0, 10000);
                 o.targetGrams = Finite(o.targetGrams, 0, 10000);
@@ -104,6 +109,7 @@ namespace MalatangStory.Game
             foreach (var entry in s.album ?? new List<AlbumEntry>())
             {
                 if (entry == null) continue;
+                entry.garnishStrokes = GarnishStroke.Normalize(entry.garnishStrokes);
                 entry.customerName = PlayerText.Clean(entry.customerName, 32);
                 entry.ingredients = Bound(entry.ingredients, MaximumItems); entry.condiments = Bound(entry.condiments, MaximumItems);
             }

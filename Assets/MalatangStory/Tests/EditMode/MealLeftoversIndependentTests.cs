@@ -373,7 +373,7 @@ namespace MalatangStory.Ingredients.Tests
             SaveRepository repository = WritePayload(payload, 8);
             GameState loaded = repository.Load();
             Assert.NotNull(loaded, repository.LastError);
-            Assert.AreEqual(9, loaded.saveVersion);
+            Assert.AreEqual(GameState.CurrentVersion, loaded.saveVersion);
             Assert.AreEqual(elapsed, loaded.orders.Single().eatSeconds);
             AssertCounts(loaded, 0, 0, 0);
             sim = new RestaurantSimulation(catalog, loaded);

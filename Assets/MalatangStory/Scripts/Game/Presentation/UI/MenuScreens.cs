@@ -106,9 +106,11 @@ namespace MalatangStory.Game
             if (Debug.isDebugBuild || Application.isEditor)
             {
                 var d = UIKit.Button(body, "", () => { App.DevelopmentSpeed = App.DevelopmentSpeed == 1 ? 8 : 1; Refresh(); }, ButtonStyle.Tab, 17, IconKind.Clock);
-                UIKit.Place(d.GetComponent<RectTransform>(), new Vector2(.5f, 1), new Vector2(0, -400), new Vector2(540, 42));
+                UIKit.Place(d.GetComponent<RectTransform>(), new Vector2(.5f, 1), new Vector2(0, -446), new Vector2(540, 36));
                 speed = d.GetComponentInChildren<Text>();
             }
+            var access = UIKit.Button(body, "操作・表示の設定", () => App.Open(GameScreen.Accessibility), ButtonStyle.Secondary, 18, IconKind.Gear);
+            UIKit.Place(access.GetComponent<RectTransform>(), new Vector2(.5f, 1), new Vector2(0, -384), new Vector2(540, 46));
             var info = UIKit.Label(body, "自動保存：30秒ごと・会計や調理の区切り・閉店時", 15, UIKit.InkSoft, TextAnchor.MiddleCenter);
             UIKit.Place(info.rectTransform, new Vector2(.5f, 0), new Vector2(0, 64), new Vector2(540, 28));
             var back = UIKit.Button(body, "戻る", Back, ButtonStyle.Primary, 21, IconKind.ArrowLeft);

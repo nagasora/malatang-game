@@ -36,12 +36,17 @@ namespace MalatangStory.Tests
             try
             {
                 var street = root.AddComponent<StreetLife>();
+                var cameraObject = new GameObject("Clipping camera"); cameraObject.transform.SetParent(root.transform);
+                var camera = cameraObject.AddComponent<Camera>(); camera.transform.position = new Vector3(0, 20, -20);
+                camera.transform.LookAt(new Vector3(0, 0, 2));
+                street.SetSeasonContext(camera, null);
                 street.SetSeason("spring", "sunny", true);
                 ParticleSystem particles = root.GetComponentInChildren<ParticleSystem>();
                 particles.Stop(true, ParticleSystemStopBehavior.StopEmittingAndClear);
                 var samples = new[]
                 {
                     new ParticleSystem.Particle { position = new Vector3(0, 5, 2), remainingLifetime = 10, startLifetime = 10, startSize = .1f },
+                    new ParticleSystem.Particle { position = new Vector3(0, 10, -9), remainingLifetime = 10, startLifetime = 10, startSize = .1f },
                     new ParticleSystem.Particle { position = new Vector3(10, 1, 2), remainingLifetime = 10, startLifetime = 10, startSize = .1f }
                 };
                 particles.SetParticles(samples, samples.Length);
@@ -53,6 +58,64 @@ namespace MalatangStory.Tests
             }
             finally { UnityEngine.Object.Destroy(root); }
             yield return null;
+        }
+
+        [UnityTest]
+        public IEnumerator LookTargetIgnoresDecorationInFrontOfAnInteractiveStation()
+        {
+            var root = new GameObject("Look selection regression");
+            try
+            {
+                var decoration = GameObject.CreatePrimitive(PrimitiveType.Cube); decoration.transform.SetParent(root.transform);
+                decoration.transform.position = new Vector3(1000, 2, 1001); decoration.transform.localScale = Vector3.one * .6f;
+                var station = new GameObject("Interactive Station"); station.transform.SetParent(root.transform);
+                station.transform.position = new Vector3(1000, 2, 1002); station.layer = RestaurantWorld.InteractionLayer;
+                station.AddComponent<BoxCollider>().size = Vector3.one * .7f;
+                var expected = station.AddComponent<WorldTarget>().Set(Station.Kitchen);
+                Physics.SyncTransforms(); yield return null;
+                Assert.AreSame(expected, RestaurantWorld.PickLookTarget(new Ray(new Vector3(1000, 2, 1000), Vector3.forward)));
+            }
+            finally { UnityEngine.Object.Destroy(root); }
+            yield return null;
+        }
+
+        [UnityTest]
+        public IEnumerator PlayerAndCustomerPassEachOtherInAnAisle()
+        {
+            string folder = Path.Combine(Path.GetTempPath(), "malatang-passing-" + Guid.NewGuid().ToString("N"));
+            Directory.CreateDirectory(folder); GameApplication.SavePathOverride = Path.Combine(folder, "save.json");
+            var go = new GameObject("Passing application");
+            var customer = new GameObject("Passing customer");
+            try
+            {
+                var app = go.AddComponent<GameApplication>(); yield return null;
+                app.NewGame(); app.Open(GameScreen.Store); app.Simulation.State.tutorialComplete = true;
+                yield return null;
+                var player = app.World.Player.GetComponent<NavMeshAgent>();
+                Assert.AreEqual(10, player.avoidancePriority);
+                Assert.IsTrue(player.Warp(new Vector3(-1.5f, 0, 0)));
+                var agent = customer.AddComponent<NavMeshAgent>(); AgentDirector.Configure(agent, 2.2f);
+                Assert.IsTrue(agent.Warp(new Vector3(1.5f, 0, 0)));
+                Assert.Greater(agent.avoidancePriority, player.avoidancePriority);
+                for (int side = -1; side <= 1; side += 2)
+                {
+                    var obstacleObject = new GameObject("Aisle side"); obstacleObject.transform.SetParent(go.transform);
+                    obstacleObject.transform.position = new Vector3(0, .6f, side * 1.15f);
+                    var obstacle = obstacleObject.AddComponent<NavMeshObstacle>(); obstacle.shape = NavMeshObstacleShape.Box;
+                    obstacle.size = new Vector3(4, 1.2f, .7f); obstacle.carving = true;
+                }
+                yield return new WaitForSeconds(.6f);
+                agent.SetDestination(new Vector3(-1.5f, 0, 0));
+                Assert.IsTrue(app.World.WalkTo(new Vector3(1.5f, 0, 0)));
+                float deadline = Time.realtimeSinceStartup + 6;
+                while ((player.transform.position.x < 1.2f || agent.transform.position.x > -1.2f) && Time.realtimeSinceStartup < deadline) yield return null;
+                Assert.Greater(player.transform.position.x, 1.2f); Assert.Less(agent.transform.position.x, -1.2f);
+            }
+            finally
+            {
+                UnityEngine.Object.Destroy(customer); UnityEngine.Object.Destroy(go); GameApplication.SavePathOverride = null;
+            }
+            yield return null; Directory.Delete(folder, true);
         }
 
         private static Button FindButton(string name)

@@ -8,7 +8,7 @@ using UnityEngine.UI;
 namespace MalatangStory.Game
 {
     /// <summary>画面の種類。</summary>
-    public enum GameScreen { Title, Store, Cooking, Shop, Management, Build, Report, Morning, Pause, Settings, Wardrobe, Help, Register, Collection }
+    public enum GameScreen { Title, Store, Cooking, Shop, Management, Build, Report, Morning, Pause, Settings, Wardrobe, Help, Register, Collection, Accessibility }
 
     /// <summary>
     /// 画面の基底クラス。Build で一度だけ部品を作り、以後は Refresh（状態変化時）と Tick（毎フレーム）で中身だけ更新する。
@@ -151,6 +151,7 @@ namespace MalatangStory.Game
                 case GameScreen.Morning: return new MorningScreen();
                 case GameScreen.Pause: return new PauseScreen();
                 case GameScreen.Settings: return new SettingsScreen();
+                case GameScreen.Accessibility: return new AccessibilityScreen();
                 case GameScreen.Wardrobe: return new WardrobeScreen();
                 case GameScreen.Help: return new HelpScreen();
                 case GameScreen.Register: return new RegisterScreen();

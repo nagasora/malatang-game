@@ -34,6 +34,7 @@ namespace MalatangStory.Game
         public List<string> selected = new List<string>();
         public List<string> condiments = new List<string>();
         public MealLeftoverResult leftovers = new MealLeftoverResult();
+        public List<GarnishStroke> garnishStrokes = new List<GarnishStroke>();
     }
 
     /// <summary>料理の状態と客の好みから残食を決定する純関数群です。</summary>

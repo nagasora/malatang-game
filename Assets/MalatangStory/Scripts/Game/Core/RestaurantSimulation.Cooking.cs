@@ -128,6 +128,7 @@ namespace MalatangStory.Game
             o.heatSeconds = 0;
             while (o.dropTimes.Count < o.selected.Count) o.dropTimes.Add(-1);
             for (int i = 0; i < o.dropTimes.Count; i++) o.dropTimes[i] = dropAll ? 0 : -1;
+            o.usedVisibleGauge = State.gaugeMode != 2 || !State.tutorialComplete || o.handledByStaff;
             o.stage = OrderStage.Heating;
             Emit(SimEventKind.HeatingStarted, o.id, pot);
             TutorialAction(Tutorial.Heat);
@@ -202,6 +203,15 @@ namespace MalatangStory.Game
             if (o.shakes >= 2) TutorialAction(Tutorial.Shake);
             Changed?.Invoke();
             return true;
+        }
+
+        public bool ShakeByHand(string id, float seconds)
+        {
+            var order = Find(id);
+            if (order == null || order.stage != OrderStage.Drained || !(seconds >= 0) || float.IsInfinity(seconds)) return false;
+            order.handRhythm = order.lastHandShake >= 0 && CookingFeel.OnRhythm(seconds - order.lastHandShake) ? Math.Min(3, order.handRhythm + 1) : 0;
+            order.lastHandShake = seconds;
+            return Shake(id);
         }
 
         /// <summary>スープを注ぐ。種類を変えると量はやり直しになる。</summary>
@@ -286,11 +296,17 @@ namespace MalatangStory.Game
             o.consumedCostFen += seasoningCost;
             State.report.foodCostFen += seasoningCost;
             o.report = QualityEvaluator.Evaluate(o, Catalog, FreshnessScore, archetype.Strictness);
+            if (o.handRhythm >= 2)
+            {
+                o.report.total = Math.Min(100, o.report.total + CookingFeel.HandRhythmBonus);
+                o.report.comments.Add("リズムよく湯切りされて、口当たりがいい！");
+            }
             Recipes.ApplyBonus(o);
             Pairings.ApplyBonus(o);
             MorningMarket.ApplyBonus(o, Catalog);
             if (o.omakase) o.report.total = Math.Min(o.report.total, Omakase.QualityCap(o, Catalog));
             o.quality = o.report.total;
+            o.expertBowl = !o.usedVisibleGauge && State.gaugeMode == 2 && !o.handledByStaff && o.quality >= 85;
             o.stage = OrderStage.Ready;
             o.pot = -1;
             Emit(SimEventKind.Finished, o.id, (long)o.quality);
@@ -347,7 +363,7 @@ namespace MalatangStory.Game
             UpdateRegular(o, archetype);
             UpdateSignature(o);
             var added = Unlocks.SettleOrder(o.id, o.paidFen, Math.Min(o.paidFen, o.discountFen));
-            int xp = 6 + (int)(o.quality / 20) + (o.quality >= 95 ? 2 : 0);
+            int xp = 6 + (int)(o.quality / 20) + (o.quality >= 95 ? 2 : 0) + (o.expertBowl ? CookingFeel.ExpertExperienceBonus : 0);
             Progression.AddExperience(this, xp);
             Emit(SimEventKind.Served, o.id, (long)o.quality, o.review);
             foreach (var item in added) Emit(SimEventKind.Unlock, item.id, 0, "新しい食材「" + item.displayName + "」を仕入れられるようになりました！");

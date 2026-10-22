@@ -861,6 +861,14 @@ namespace MalatangStory.Game
             PlayEffect(index, transform.position, false, Unit(volume), Mathf.Max(0.1f, pitch));
         }
 
+        public void PlayPitched(Sfx id, float pitch, float volume = 1f)
+        {
+            int index = CheckedIndex((int)id, EffectCount, nameof(id));
+            if (!isActiveAndEnabled || !float.IsFinite(pitch)) return;
+            Initialize();
+            PlayEffect(index, transform.position, false, Unit(volume), Mathf.Clamp(pitch, .6f, 1.6f));
+        }
+
         /// <summary>指定ワールド位置で3D効果音を再生する。空間混合率は0.7。</summary>
         public void PlayAt(Sfx id, Vector3 position, float volume = 1f)
         {

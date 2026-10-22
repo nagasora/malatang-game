@@ -85,7 +85,7 @@ namespace MalatangStory.Game
                 var collider = go.gameObject.AddComponent<BoxCollider>();
                 var (w, d) = def.Kind == FurnitureKind.Wall ? (1, 1) : (def.Width, def.Depth);
                 collider.center = new Vector3(0, .4f, 0); collider.size = def.Kind == FurnitureKind.Wall ? new Vector3(1, 1, .3f) : new Vector3(w * .95f, .8f, d * .95f);
-                if (def.Kind == FurnitureKind.Table) go.gameObject.AddComponent<WorldTarget>().Set(Station.Table, item.uid);
+                if (def.Kind == FurnitureKind.Table) { go.gameObject.layer = RestaurantWorld.InteractionLayer; go.gameObject.AddComponent<WorldTarget>().Set(Station.Table, item.uid); }
             }
             return go;
         }

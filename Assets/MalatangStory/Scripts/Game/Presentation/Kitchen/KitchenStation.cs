@@ -6,7 +6,7 @@ using UnityEngine;
 namespace MalatangStory.Game
 {
     /// <summary>厨房の3D操作対象の種類。</summary>
-    public enum KitchenTargetKind { Pot, Kettle, Jar, Scale, Basket, Piece, Bowl }
+    public enum KitchenTargetKind { Pot, Kettle, Jar, Scale, Basket, Piece, Bowl, Ingredient }
 
     /// <summary>厨房で直接タップ・ドラッグできる物の目印。</summary>
     public sealed class KitchenTarget : MonoBehaviour
@@ -61,6 +61,24 @@ namespace MalatangStory.Game
         private bool pouring;
         private ParticleSystem pourStream;
         private Vector3 ladleHome;
+        private Transform tongs, tongLeft, tongRight, soupTarget;
+        private readonly Queue<(string id, int index)> tongDrops = new Queue<(string, int)>();
+        private (string id, int index) tongDrop;
+        private Vector3 tongStart;
+        private float tongElapsed, tongDuration;
+        private bool tongActive;
+        private GameObject tongFood;
+        private LineRenderer liquidStream;
+        private string heldIngredient;
+        private float ingredientHold;
+        private Vector2 ingredientPress;
+        private float overflowAt, paintAt;
+        private string paintCondiment;
+        private Transform livePaint;
+        private int paintedCount;
+        private readonly TextMesh[] potTimers = new TextMesh[4];
+        private readonly int[] shownPotSeconds = { int.MinValue, int.MinValue, int.MinValue, int.MinValue };
+        private readonly bool[] potWasReady = new bool[4];
         private int pointerHeldKettle = -1;
         private float lastDragY;
         private int dragDirection;
@@ -100,8 +118,19 @@ namespace MalatangStory.Game
                 steam[i] = EffectsFactory.Steam(pot, 0); steam[i].transform.localPosition = new Vector3(0, waterLevel + .02f, 0);
                 bubbles[i] = EffectsFactory.Bubbles(pot, .24f); bubbles[i].transform.localPosition = new Vector3(0, waterLevel + .006f, 0);
                 smoke[i] = null;
+                potTimers[i] = store.Label("", new Vector3(0, .9f, 0), Quaternion.identity, .018f, UIKit.Gold, pot);
             }
             ladleHome = store.Ladle.position;
+            tongs = new GameObject("Serving Tongs").transform; tongs.SetParent(root, false);
+            Material steel = MaterialLibrary.Lit(new Color(.62f, .67f, .7f), .8f, .65f);
+            tongLeft = StoreBuilder.Part("Left Jaw", StoreBuilder.RoundedBox(new Vector3(.025f, .27f, .035f), .008f), steel, new Vector3(-.035f, 0, 0), Vector3.one, tongs, null, false).transform;
+            tongRight = StoreBuilder.Part("Right Jaw", StoreBuilder.RoundedBox(new Vector3(.025f, .27f, .035f), .008f), steel, new Vector3(.035f, 0, 0), Vector3.one, tongs, null, false).transform;
+            StoreBuilder.Part("Spring", StoreBuilder.RoundedBox(new Vector3(.1f, .025f, .035f), .008f), steel, new Vector3(0, .13f, 0), Vector3.one, tongs, null, false);
+            tongs.gameObject.SetActive(false);
+            liquidStream = new GameObject("Soup Stream").AddComponent<LineRenderer>(); liquidStream.transform.SetParent(root, false);
+            liquidStream.positionCount = 2; liquidStream.startWidth = .028f; liquidStream.endWidth = .018f;
+            liquidStream.numCapVertices = 3; liquidStream.sharedMaterial = MaterialLibrary.Lit(new Color(.93f, .5f, .16f, .8f), .75f);
+            liquidStream.enabled = false;
         }
 
         private RestaurantSimulation Sim => world.App.Simulation;
@@ -151,6 +180,9 @@ namespace MalatangStory.Game
             UpdateLiftedBasket(deltaTime);
             UpdateLadle(deltaTime);
             UpdateScaleDisplay();
+            UpdateTongs(deltaTime);
+            UpdatePourStream();
+            UpdatePaintedGarnishes();
         }
 
         private const float GarnishReferenceRadius = .38f;
@@ -180,10 +212,13 @@ namespace MalatangStory.Game
             {
                 int column = i % 6, row = i / 6;
                 Vector3 center = new Vector3(-6.2f + column * .42f, StoreLayout.BackCounterHeight + .07f, 4.55f + row * .3f);
-                StoreBuilder.Part("Tray", StoreBuilder.RoundedBox(new Vector3(.38f, .04f, .26f), .015f), tray, center, Vector3.one, cooler, null, false);
+                var bin = StoreBuilder.Part("Tray", StoreBuilder.RoundedBox(new Vector3(.38f, .04f, .26f), .015f), tray, center, Vector3.one, cooler, null, false);
+                var binCollider = bin.AddComponent<BoxCollider>(); binCollider.size = new Vector3(.38f, .14f, .26f); binCollider.center = Vector3.up * .05f;
+                bin.AddComponent<KitchenTarget>().Set(KitchenTargetKind.Ingredient, i);
                 for (int k = 0; k < 2; k++)
                 {
                     var piece = IngredientVisuals.Build(items[i], cooler, .55f);
+                    piece.AddComponent<KitchenTarget>().Set(KitchenTargetKind.Ingredient, i);
                     piece.transform.position = center + new Vector3(-.07f + k * .14f, .04f, (k % 2) * .03f);
                     piece.transform.rotation = Quaternion.Euler(0, (i * 47 + k * 90) % 360, 0);
                 }
@@ -223,6 +258,13 @@ namespace MalatangStory.Game
                 }
             }
             bool open = sim.State.phase == DayPhase.Open || sim.State.phase == DayPhase.Closing;
+            float progress = 0;
+            if (heating != null && heating.selected.Count > 0)
+            {
+                for (int i = 0; i < heating.selected.Count; i++) progress += sim.Doneness(heating, i);
+                progress /= heating.selected.Count;
+            }
+            CookingCue cue = CookingFeel.Cues(progress);
             float warning = heating == null ? 0 : Mathf.InverseLerp(boilThresholds[p] - 10f, boilThresholds[p], heating.heatSeconds);
             float quality = sim.State.highQuality ? 1f : .45f;
             ParticleSystem.MainModule steamMain = steam[p].main;
@@ -231,12 +273,26 @@ namespace MalatangStory.Game
             int bubbleMaximum = sim.State.highQuality ? 48 : 20;
             if (steamMain.maxParticles != steamMaximum) steamMain.maxParticles = steamMaximum;
             if (bubbleMain.maxParticles != bubbleMaximum) bubbleMain.maxParticles = bubbleMaximum;
-            EffectsFactory.SetIntensity(steam[p], quality * (open ? (heating != null ? 1.5f + warning * .5f : .35f) : .1f));
-            EffectsFactory.SetIntensity(bubbles[p], quality * (open ? (heating != null ? 1.25f + warning * 1.65f : .3f) : 0));
+            EffectsFactory.SetIntensity(steam[p], quality * (open ? (heating != null ? cue.Steam + warning * .5f : .35f) : .1f));
+            EffectsFactory.SetIntensity(bubbles[p], quality * (open ? (heating != null ? cue.Bubbles + warning * 1.65f : .3f) : 0));
             if (potWater[p] != null)
                 potWater[p].localPosition = new Vector3(0, potWaterLevels[p] + (heating != null ? Mathf.Sin(Time.time * 5f + p) * .003f : 0), 0);
             Transform flame = pot.Find("Flame");
             if (flame != null) flame.gameObject.SetActive(open);
+            if (potTimers[p] != null)
+            {
+                bool ready = heating != null && sim.SecondsUntilDone(heating) <= 0;
+                bool show = heating != null && world.Mode == WorldMode.Overview;
+                potTimers[p].gameObject.SetActive(show);
+                if (show)
+                {
+                    int seconds = Mathf.CeilToInt(Mathf.Max(0, sim.SecondsUntilDone(heating)));
+                    if (seconds != shownPotSeconds[p]) { shownPotSeconds[p] = seconds; potTimers[p].text = sim.State.gaugeMode == 2 ? "♨" : ready ? "✓" : seconds + "秒"; }
+                    potTimers[p].transform.rotation = world.View.transform.rotation;
+                }
+                if (ready && !potWasReady[p]) world.App.Audio.Play(Sfx.ScaleBeep, .3f);
+                potWasReady[p] = ready;
+            }
             if (heating != null)
             {
                 if (baskets[p] != null) baskets[p].localPosition = new Vector3(0, potWaterLevels[p] - .175f + Mathf.Sin(Time.time * 2.4f + p) * .004f, 0);
@@ -326,6 +382,7 @@ namespace MalatangStory.Game
 
         private void ClearBowl()
         {
+            tongDrops.Clear(); tongActive = false; if (tongFood != null) Object.Destroy(tongFood); if (tongs != null) tongs.gameObject.SetActive(false);
             foreach (var p in bowlPieces) if (p != null) Object.Destroy(p);
             bowlPieces.Clear();
             if (bowl != null) Object.Destroy(bowl.gameObject);
@@ -333,6 +390,7 @@ namespace MalatangStory.Game
             if (toppings != null) Object.Destroy(toppings.gameObject);
             bowl = null; soupSurface = null; toppings = null; liftedBasket = null;
             toppingContents.Clear(); toppingSpice = -1;
+            soupTarget = null; livePaint = null; paintedCount = 0;
             displayedSoupMl = 0;
             platingActive = false; platingBlend = 0f; appliedPlatingBlend = -1f; appliedPlatingLift = -1f;
             platingInputs.Clear(); platingTargets.Clear(); platingStarts.Clear();
@@ -549,7 +607,7 @@ namespace MalatangStory.Game
         private void BuildToppings()
         {
             if (bowl == null || order == null) return;
-            toppings = SoupVisuals.BuildGarnishes(bowl, order.condiments, order.chosenSpice, CustomerDirector.StableHash(order.id), GarnishReferenceRadius);
+            toppings = SoupVisuals.BuildGarnishes(bowl, order.condiments, order.chosenSpice, CustomerDirector.StableHash(order.id), GarnishReferenceRadius, order.stage == OrderStage.Ready ? order.garnishStrokes : null);
             toppings.localPosition = Vector3.up * (SoupHeight(displayedSoupMl) + .006f);
         }
 
@@ -558,7 +616,7 @@ namespace MalatangStory.Game
         public void OnIngredientAdded(string ingredientId)
         {
             if (order == null || order.stage != OrderStage.Selecting || bowl == null) return;
-            DropPiece(ingredientId, order.selected.Count - 1, false);
+            tongDrops.Enqueue((ingredientId, order.selected.Count - 1));
             displaySnapshot.CaptureBowl(order);
         }
 
@@ -596,6 +654,63 @@ namespace MalatangStory.Game
                 world.App.Audio.Play(Sfx.Pour, .8f);
             }
             if (!pouring) pourStream = null;
+        }
+
+        private void UpdatePaintedGarnishes()
+        {
+            if (bowl == null || order == null || order.stage != OrderStage.Finishing) return;
+            if (livePaint == null) { livePaint = new GameObject("Painted Garnish Trail").transform; livePaint.SetParent(bowl, false); }
+            while (paintedCount < order.garnishStrokes.Count)
+                SoupVisuals.AppendPaintedStroke(livePaint, order.garnishStrokes[paintedCount++], GarnishReferenceRadius);
+            livePaint.localPosition = Vector3.up * (SoupHeight(displayedSoupMl) + .008f);
+        }
+
+        private void UpdateTongs(float dt)
+        {
+            if (order == null || order.stage != OrderStage.Selecting || bowl == null) { tongDrops.Clear(); tongActive = false; tongs.gameObject.SetActive(false); return; }
+            if (!tongActive && tongDrops.Count > 0)
+            {
+                tongDrop = tongDrops.Dequeue();
+                if (tongDrop.index >= order.selected.Count || order.selected[tongDrop.index] != tongDrop.id) return;
+                tongStart = new Vector3(-5.2f, StoreLayout.BackCounterHeight + .3f, 4.7f);
+                for (int i = 0; i < displaySnapshot.CoolerItems.Count; i++)
+                    if (displaySnapshot.CoolerItems[i].id == tongDrop.id) tongStart = new Vector3(-6.2f + i % 6 * .42f, StoreLayout.BackCounterHeight + .3f, 4.55f + i / 6 * .3f);
+                if (tongFood != null) Object.Destroy(tongFood);
+                tongFood = IngredientVisuals.Build(catalog.Get(tongDrop.id), tongs, .35f);
+                tongFood.transform.localPosition = Vector3.down * .13f;
+                tongDuration = tongDrops.Count > 0 ? .14f : .3f; tongElapsed = 0; tongActive = true; tongs.gameObject.SetActive(true);
+            }
+            if (!tongActive) return;
+            tongElapsed += dt;
+            float progress = Mathf.Clamp01(tongElapsed / tongDuration);
+            tongs.position = Vector3.Lerp(tongStart, bowl.position + Vector3.up * .42f, Mathf.SmoothStep(0, 1, progress)) + Vector3.up * Mathf.Sin(progress * Mathf.PI) * .2f;
+            tongs.rotation = Quaternion.Euler(15, 0, -15);
+            float open = progress < .15f || progress > .8f ? 12 : 3;
+            tongLeft.localRotation = Quaternion.Euler(0, 0, -open); tongRight.localRotation = Quaternion.Euler(0, 0, open);
+            if (progress < 1) return;
+            if (tongFood != null) Object.Destroy(tongFood);
+            DropPiece(tongDrop.id, tongDrop.index, false);
+            world.App.Audio.Play(Sfx.IngredientDrop, .35f);
+            tongActive = false; tongs.gameObject.SetActive(false);
+        }
+
+        private void UpdatePourStream()
+        {
+            bool show = pouring && bowl != null && order != null;
+            liquidStream.enabled = show;
+            if (show)
+            {
+                liquidStream.SetPosition(0, store.Ladle.position + Vector3.down * .03f);
+                liquidStream.SetPosition(1, bowl.TransformPoint(Vector3.up * (SoupHeight(displayedSoupMl) + .02f)));
+                var soup = Content.Soup(string.IsNullOrEmpty(order.chosenSoup) ? order.soup : order.chosenSoup);
+                if (order.soupMl > soup.IdealMaxMl && Time.time >= overflowAt)
+                { EffectsFactory.Splash(bowl.position + Vector3.right * .12f); overflowAt = Time.time + .6f; }
+            }
+            if (order == null || bowl == null || (order.stage != OrderStage.Drained && order.stage != OrderStage.Finishing)) return;
+            if (soupTarget == null)
+                soupTarget = StoreBuilder.Part("Ideal Soup Level", MeshFactory.Torus(.34f, .004f, 48, 4), MaterialLibrary.Emissive(UIKit.Gold, UIKit.Gold, .4f), Vector3.zero, Vector3.one, bowl, null, false).transform;
+            var targetSoup = Content.Soup(string.IsNullOrEmpty(order.chosenSoup) ? order.soup : order.chosenSoup);
+            soupTarget.localPosition = Vector3.up * SoupHeight((targetSoup.IdealMinMl + targetSoup.IdealMaxMl) * .5f);
         }
 
         private void UpdateLiftedBasket(float deltaTime)
@@ -644,7 +759,7 @@ namespace MalatangStory.Game
             float h = bowlMesh.bounds.size.y;
             float surfaceRadius = soup.Id == "dry" ? .32f : .44f;
             GameObject surface = SoupVisuals.CreateSurface(go.transform, soup.Id, o.chosenSpice, surfaceRadius, h * .72f, true, false);
-            Transform garnishes = SoupVisuals.BuildGarnishes(go.transform, o.condiments, o.chosenSpice, CustomerDirector.StableHash(o.id), surfaceRadius);
+            Transform garnishes = SoupVisuals.BuildGarnishes(go.transform, o.condiments, o.chosenSpice, CustomerDirector.StableHash(o.id), surfaceRadius, o.garnishStrokes);
             garnishes.localPosition = Vector3.up * (h * .72f + .006f);
             PlateServedPieces(o, go.transform, h * .72f, surface.transform, garnishes);
             var steamFx = EffectsFactory.Steam(go.transform, o.mealFinished ? 0f : SoupAppearance.ForSoup(soup.Id, o.chosenSpice).SteamIntensity);
@@ -685,7 +800,7 @@ namespace MalatangStory.Game
         public GameObject CreateLeftoverBowl(MealRemains remains, Vector3 position)
         {
             CustomerOrder order = new CustomerOrder { id = remains.orderId, soup = remains.soup, chosenSoup = remains.soup,
-                chosenSpice = remains.spice, selected = remains.selected, condiments = remains.condiments,
+                chosenSpice = remains.spice, selected = remains.selected, condiments = remains.condiments, garnishStrokes = remains.garnishStrokes,
                 mealFinished = true, leftovers = remains.leftovers };
             GameObject bowl = CreateServedBowl(order, position);
             bowl.name = "Leftover Bowl " + remains.orderId;
@@ -706,7 +821,32 @@ namespace MalatangStory.Game
         public bool HandlePointer(Camera camera, Vector2 position, bool pressed, bool held, bool released)
         {
             var o = order;
-            if (released) { pointerHeldKettle = -1; draggingBasket = false; }
+            if (released) { pointerHeldKettle = -1; draggingBasket = false; heldIngredient = null; paintCondiment = null; }
+            if (held && heldIngredient != null && o != null && o.stage == OrderStage.Selecting)
+            {
+                if ((position - ingredientPress).sqrMagnitude > 900) heldIngredient = null;
+                else
+                {
+                    ingredientHold += Time.deltaTime;
+                    if (ingredientHold >= .45f) { ingredientHold = .25f; Sim.AddIngredient(o.id, heldIngredient); }
+                    return true;
+                }
+            }
+            if (held && paintCondiment != null && bowl != null && o != null && o.stage == OrderStage.Finishing)
+            {
+                Ray ray = camera.ScreenPointToRay(position);
+                Plane plane = new Plane(Vector3.up, bowl.TransformPoint(Vector3.up * SoupHeight(displayedSoupMl)));
+                if (Time.unscaledTime >= paintAt && plane.Raycast(ray, out float distance))
+                {
+                    Vector3 local = bowl.InverseTransformPoint(ray.GetPoint(distance));
+                    if (local.x * local.x + local.z * local.z <= GarnishReferenceRadius * GarnishReferenceRadius)
+                    {
+                        if (Sim.State.highQuality || o.garnishStrokes.Count < 32) Sim.PaintCondiment(o.id, paintCondiment, local.x / GarnishReferenceRadius, local.z / GarnishReferenceRadius);
+                        paintAt = Time.unscaledTime + .075f;
+                    }
+                }
+                return true;
+            }
             if (held && pointerHeldKettle >= 0 && o != null && !string.IsNullOrEmpty(SelectedSoup))
             {
                 Sim.PourSoup(o.id, SelectedSoup, 150f * Time.deltaTime);
@@ -719,7 +859,7 @@ namespace MalatangStory.Game
                 if (Mathf.Abs(dy) > 14)
                 {
                     int dir = dy > 0 ? 1 : -1;
-                    if (dir != dragDirection && dragDirection != 0 && dir < 0) Sim.Shake(o.id);
+                    if (dir != dragDirection && dragDirection != 0 && dir < 0) Sim.ShakeByHand(o.id, Time.unscaledTime);
                     dragDirection = dir; lastDragY = position.y;
                 }
                 return true;
@@ -731,6 +871,12 @@ namespace MalatangStory.Game
             var sim = Sim;
             switch (target.Kind)
             {
+                case KitchenTargetKind.Ingredient:
+                    if (o == null || o.stage != OrderStage.Selecting || target.Index < 0 || target.Index >= displaySnapshot.CoolerItems.Count) return true;
+                    var ingredient = displaySnapshot.CoolerItems[target.Index];
+                    sim.AddIngredient(o.id, ingredient.id);
+                    if (ingredient.category == "vegetable" || ingredient.category == "noodle") { heldIngredient = ingredient.id; ingredientHold = 0; ingredientPress = position; }
+                    return true;
                 case KitchenTargetKind.Pot:
                     var inPot = sim.State.orders.FirstOrDefault(x => x.stage == OrderStage.Heating && x.pot == target.Index);
                     if (inPot != null && inPot != o) { world.App.SelectedOrderId = inPot.id; sim.PlayerFocusOrderId = inPot.id; world.App.UI.Refresh(); }
@@ -755,7 +901,7 @@ namespace MalatangStory.Game
                     if (o == null) return true;
                     var condiment = Content.Condiments[Mathf.Clamp(target.Index, 0, Content.Condiments.Length - 1)];
                     if (!sim.Customers.AvailableCondiments.Contains(condiment)) { world.App.UI.Toast(condiment.Name + "は店舗レベル" + condiment.UnlockLevel + "で解禁されます。", IconKind.Lock); return true; }
-                    sim.AddCondiment(o.id, condiment.Id);
+                    if (sim.AddCondiment(o.id, condiment.Id)) paintCondiment = condiment.Id;
                     return true;
                 case KitchenTargetKind.Piece:
                     if (o != null && o.stage == OrderStage.Selecting && o.style == OrderStyle.Ordered && target.Index < o.selected.Count) sim.RemoveIngredient(o.id, o.selected[target.Index]);

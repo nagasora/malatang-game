@@ -15,6 +15,8 @@ namespace MalatangStory.Game
     public static class UIKit
     {
         public static Font Font;
+        public static float TextScale = 1;
+        public static bool ReduceMotion;
         /// <summary>ボタン押下時に鳴らす音（オーディオ側が設定する）。</summary>
         public static Action ClickSound;
 
@@ -80,11 +82,11 @@ namespace MalatangStory.Game
         {
             var rt = Rect(name, parent);
             var label = rt.gameObject.AddComponent<Text>();
-            label.font = Font; label.text = text; label.fontSize = size; label.color = color ?? Ink;
+            label.font = Font; label.text = text; label.fontSize = Mathf.RoundToInt(size * TextScale); label.color = color ?? Ink;
             label.alignment = align; label.raycastTarget = false; label.supportRichText = false;
             label.fontStyle = bold ? FontStyle.Bold : FontStyle.Normal;
             label.horizontalOverflow = HorizontalWrapMode.Wrap; label.verticalOverflow = VerticalWrapMode.Truncate;
-            label.resizeTextForBestFit = true; label.resizeTextMinSize = Mathf.Max(10, size - 8); label.resizeTextMaxSize = size;
+            label.resizeTextForBestFit = true; label.resizeTextMinSize = Mathf.Max(10, size - 8); label.resizeTextMaxSize = Mathf.RoundToInt(size * TextScale);
             label.lineSpacing = 1.05f;
             return label;
         }
@@ -293,7 +295,7 @@ namespace MalatangStory.Game
         {
             if (Mathf.Abs(current - target) < .0005f && Mathf.Abs(velocity) < .0005f) return;
             current = Mathf.SmoothDamp(current, target, ref velocity, .05f, 100, Time.unscaledDeltaTime);
-            transform.localScale = Vector3.one * current;
+            transform.localScale = Vector3.one * (UIKit.ReduceMotion ? 1 : current);
         }
     }
 
@@ -318,12 +320,12 @@ namespace MalatangStory.Game
         private void Awake()
         {
             group = (TryGetComponent<CanvasGroup>(out var existingCanvasGroup) ? existingCanvasGroup : gameObject.AddComponent<CanvasGroup>());
-            group.alpha = 0; transform.localScale = Vector3.one * .85f;
+            group.alpha = UIKit.ReduceMotion ? 1 : 0; transform.localScale = Vector3.one * (UIKit.ReduceMotion ? 1 : .85f);
         }
         private void Update()
         {
             time += Time.unscaledDeltaTime;
-            float t = Mathf.Clamp01((time - Delay) / Duration);
+            float t = UIKit.ReduceMotion ? 1 : Mathf.Clamp01((time - Delay) / Duration);
             float eased = 1 - Mathf.Pow(1 - t, 3);
             float overshoot = 1 + Mathf.Sin(t * Mathf.PI) * .06f;
             group.alpha = eased;

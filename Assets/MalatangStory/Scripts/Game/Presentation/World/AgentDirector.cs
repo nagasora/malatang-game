@@ -50,7 +50,7 @@ namespace MalatangStory.Game
         public static void Configure(NavMeshAgent agent, float speed)
         {
             agent.speed = speed; agent.angularSpeed = 720; agent.acceleration = 14; agent.radius = .24f; agent.height = 1.4f;
-            agent.stoppingDistance = .08f; agent.autoBraking = true; agent.obstacleAvoidanceType = ObstacleAvoidanceType.LowQualityObstacleAvoidance;
+            agent.stoppingDistance = .08f; agent.autoBraking = true; agent.obstacleAvoidanceType = ObstacleAvoidanceType.MedQualityObstacleAvoidance;
         }
 
         /// <summary>客の位置（浮かぶ文字用）。</summary>
@@ -98,6 +98,10 @@ namespace MalatangStory.Game
             var archetype = Content.Archetype(order.archetype);
             var appearance = CharacterAppearance.ForArchetype(order.archetype, order.appearanceSeed, archetype.Child);
             var rig = CharacterFactory.Create(appearance, order.customerName, root);
+            var target = rig.gameObject.AddComponent<CustomerTarget>(); target.OrderId = order.id;
+            rig.gameObject.layer = RestaurantWorld.CustomerLayer;
+            var capsule = rig.gameObject.AddComponent<CapsuleCollider>();
+            capsule.center = Vector3.up * .8f; capsule.radius = .28f; capsule.height = 1.6f; capsule.isTrigger = true;
             Vector3 door = StoreLayout.Door(rows) + new Vector3((order.appearanceSeed % 7 - 3) * .15f, 0, 0);
             Vector3 street = Street(order.appearanceSeed, rows);
             // 歩道から歩いて来るが、ナビメッシュが歩道まで届かない店の形では入口に直接出す。

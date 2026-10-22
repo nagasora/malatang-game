@@ -283,6 +283,7 @@ namespace MalatangStory.Game
             }
             if (order.stage == OrderStage.Heating)
             {
+                if (State.gaugeMode != 2) order.usedVisibleGauge = true;
                 order.heatSeconds += seconds * CookSpeedMultiplier;
                 StaffWork.AutoDrop(order);
                 float slowest = order.selected.Count == 0 ? 0 : order.selected.Max(x => Catalog.Get(x).cookingSeconds);
@@ -327,7 +328,7 @@ namespace MalatangStory.Game
                 State.mealRemains.RemoveAll(x => x.seat == order.seat);
                 State.mealRemains.Add(new MealRemains { orderId = order.id, seat = order.seat,
                     soup = string.IsNullOrEmpty(order.chosenSoup) ? order.soup : order.chosenSoup, spice = order.chosenSpice,
-                    selected = new List<string>(order.selected), condiments = new List<string>(order.condiments), leftovers = order.leftovers });
+                    selected = new List<string>(order.selected), condiments = new List<string>(order.condiments), garnishStrokes = GarnishStroke.Copy(order.garnishStrokes), leftovers = order.leftovers });
             }
             order.visualState = "leave";
             order.visualSeconds = 0;
