@@ -167,13 +167,13 @@ namespace MalatangStory.Game
         /// <summary>移動速度をメートル毎秒で指定する。正の値で歩行周期を進める。</summary>
         public void SetMoveSpeed(float metersPerSecond)
         {
-            speed = IsFinite(metersPerSecond) ? Mathf.Max(0f, metersPerSecond) : 0f;
+            speed = float.IsFinite(metersPerSecond) ? Mathf.Max(0f, metersPerSecond) : 0f;
         }
 
         /// <summary>指定時間だけ頭上に吹き出しを表示する。None または非正の時間で解除する。</summary>
         public void ShowEmote(EmoteKind kind, float seconds = 2f)
         {
-            if (kind <= EmoteKind.None || kind > EmoteKind.Steam || !IsFinite(seconds) || seconds <= 0f)
+            if (kind <= EmoteKind.None || kind > EmoteKind.Steam || !float.IsFinite(seconds) || seconds <= 0f)
             {
                 emoteRemaining = 0f;
                 if (emote != null) emote.gameObject.SetActive(false);
@@ -210,7 +210,7 @@ namespace MalatangStory.Game
         /// <summary>頭を指定したワールド位置に軽く向ける。</summary>
         public void LookAt(Vector3 worldPoint)
         {
-            if (!IsFinite(worldPoint.x) || !IsFinite(worldPoint.y) || !IsFinite(worldPoint.z)) return;
+            if (!float.IsFinite(worldPoint.x) || !float.IsFinite(worldPoint.y) || !float.IsFinite(worldPoint.z)) return;
             lookPoint = worldPoint;
             hasLookPoint = true;
         }
@@ -265,7 +265,7 @@ namespace MalatangStory.Game
             {
                 oldVisual.gameObject.SetActive(false);
                 CharacterFactory.ReleaseVisual(oldVisual);
-                DestroyOwned(oldVisual.gameObject);
+                OwnedObjects.Destroy(oldVisual.gameObject);
             }
         }
 
@@ -463,7 +463,6 @@ namespace MalatangStory.Game
             mouth.localScale = Vector3.Lerp(mouth.localScale, target, blend);
             RotateJoint(mouth, Vector3.zero, blend);
             AnimateFaceDetails(angry, blend);
-
         }
 
         /// <summary>頬の赤みを共有材質を複製せず更新し、待ちくたびれた時だけ汗粒を揺らす。</summary>
@@ -832,19 +831,6 @@ namespace MalatangStory.Game
         {
             restScale.y *= closure;
             lid.localScale = restScale;
-        }
-
-        /// <summary>浮動小数点値が有限かを検査する。</summary>
-        private static bool IsFinite(float value)
-        {
-            return !float.IsNaN(value) && !float.IsInfinity(value);
-        }
-
-        /// <summary>実行中と編集時で適切な破棄方法を選ぶ。</summary>
-        private static void DestroyOwned(UnityEngine.Object owned)
-        {
-            if (Application.isPlaying) UnityEngine.Object.Destroy(owned);
-            else UnityEngine.Object.DestroyImmediate(owned);
         }
 
         /// <summary>外部の持ち物を戻し、インスタンス固有メッシュを解放する。</summary>

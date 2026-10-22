@@ -103,7 +103,7 @@ namespace MalatangStory.Game
             /// <summary>結合に使用した中間メッシュを解放します。</summary>
             public void Dispose()
             {
-                foreach (Mesh mesh in ownedMeshes) Release(mesh);
+                foreach (Mesh mesh in ownedMeshes) OwnedObjects.Destroy(mesh);
                 ownedMeshes.Clear();
             }
         }
@@ -133,9 +133,9 @@ namespace MalatangStory.Game
             if (item == null) throw new ArgumentNullException(nameof(item));
             if (string.IsNullOrWhiteSpace(item.id))
                 throw new ArgumentException("食材IDを指定してください。", nameof(item));
-            if (!IsFinite(scale) || scale <= 0f)
+            if (!float.IsFinite(scale) || scale <= 0f)
                 throw new ArgumentOutOfRangeException(nameof(scale), "倍率には正の有限値が必要です。");
-            if (physics && (!IsFinite(item.portionGrams) || item.portionGrams <= 0f))
+            if (physics && (!float.IsFinite(item.portionGrams) || item.portionGrams <= 0f))
                 throw new ArgumentOutOfRangeException(nameof(item), "物理モデルには正の有限重量が必要です。");
 
             if (FoodRegistry.TryGet(item.id, out FoodModel food))
@@ -154,7 +154,7 @@ namespace MalatangStory.Game
             {
                 VisualTemplate replacement = CreateTemplate(key, definition);
                 if (template != null)
-                    foreach (Mesh mesh in template.Meshes) Release(mesh);
+                    foreach (Mesh mesh in template.Meshes) OwnedObjects.Destroy(mesh);
                 template = replacement;
                 Templates[key] = template;
             }
@@ -198,7 +198,7 @@ namespace MalatangStory.Game
             }
             catch
             {
-                Release(root);
+                OwnedObjects.Destroy(root);
                 throw;
             }
         }
@@ -239,7 +239,7 @@ namespace MalatangStory.Game
                 root.AddComponent<IngredientView>().InitializeTextured(renderers, model.Surfaces);
                 return root;
             }
-            catch { Release(root); throw; }
+            catch { OwnedObjects.Destroy(root); throw; }
         }
 
         /// <summary>69個のカタログIDに対応する専用の形状仕様を定義します。</summary>
@@ -419,7 +419,7 @@ namespace MalatangStory.Game
                     }
                     if (!hasBounds) throw new InvalidOperationException("食材メッシュに部品がありません。");
                     float largest = Mathf.Max(bounds.size.x, Mathf.Max(bounds.size.y, bounds.size.z));
-                    if (!IsFinite(largest) || largest <= 0f)
+                    if (!float.IsFinite(largest) || largest <= 0f)
                         throw new InvalidOperationException("食材メッシュの寸法が不正です。");
                     float nominal = Mathf.Clamp(Mathf.Max(definition.Size.x,
                         Mathf.Max(definition.Size.y, definition.Size.z)), .1f, .25f);
@@ -439,7 +439,7 @@ namespace MalatangStory.Game
                 }
                 catch
                 {
-                    foreach (Mesh mesh in meshes) Release(mesh);
+                    foreach (Mesh mesh in meshes) OwnedObjects.Destroy(mesh);
                     throw;
                 }
             }
@@ -1241,20 +1241,6 @@ namespace MalatangStory.Game
             mesh.RecalculateBounds();
             return mesh;
         }
-
-        /// <summary>NaNと無限大を除外します。</summary>
-        private static bool IsFinite(float value)
-        {
-            return !float.IsNaN(value) && !float.IsInfinity(value);
-        }
-
-        /// <summary>実行モードに合わせて所有オブジェクトを解放します。</summary>
-        private static void Release(UnityEngine.Object instance)
-        {
-            if (instance == null) return;
-            if (Application.isPlaying) UnityEngine.Object.Destroy(instance);
-            else UnityEngine.Object.DestroyImmediate(instance);
-        }
     }
 
     /// <summary>共有マテリアルを複製せず、食材の加熱状態と表面の濡れを更新します。</summary>
@@ -1314,11 +1300,11 @@ namespace MalatangStory.Game
             for (int index = 0; index < count; index++)
             {
                 if (renderers[index] == null) throw new ArgumentException("描画対象が失われています。");
-                ValidateColor(raw[index]); ValidateColor(cooked[index]); ValidateColor(overcooked[index]);
-                ValidateFinite(drySmoothness[index], nameof(drySmoothness));
-                ValidateFinite(cookedSmoothness[index], nameof(cookedSmoothness));
+                OwnedObjects.ValidateColor(raw[index], nameof(raw)); OwnedObjects.ValidateColor(cooked[index], nameof(cooked)); OwnedObjects.ValidateColor(overcooked[index], nameof(overcooked));
+                OwnedObjects.ValidateFinite(drySmoothness[index], nameof(drySmoothness));
+                OwnedObjects.ValidateFinite(cookedSmoothness[index], nameof(cookedSmoothness));
                 float overGloss = overcookedSmoothness == null ? cookedSmoothness[index] : overcookedSmoothness[index];
-                ValidateFinite(overGloss, nameof(overcookedSmoothness));
+                OwnedObjects.ValidateFinite(overGloss, nameof(overcookedSmoothness));
                 validated[index] = new RendererState(renderers[index], raw[index], cooked[index], overcooked[index],
                     Mathf.Clamp01(drySmoothness[index]), Mathf.Clamp01(cookedSmoothness[index]), Mathf.Clamp01(overGloss));
             }
@@ -1351,7 +1337,7 @@ namespace MalatangStory.Game
         /// <exception cref="InvalidOperationException">生成処理で初期化されていない場合です。</exception>
         public void SetDoneness(float doneness)
         {
-            ValidateFinite(doneness, nameof(doneness));
+            OwnedObjects.ValidateFinite(doneness, nameof(doneness));
             EnsureInitialized();
             this.doneness = Mathf.Clamp(doneness, 0f, 1.5f);
             ApplyState();
@@ -1363,7 +1349,7 @@ namespace MalatangStory.Game
         /// <exception cref="InvalidOperationException">生成処理で初期化されていない場合です。</exception>
         public void SetWet(float wetness)
         {
-            ValidateFinite(wetness, nameof(wetness));
+            OwnedObjects.ValidateFinite(wetness, nameof(wetness));
             EnsureInitialized();
             this.wetness = Mathf.Clamp01(wetness);
             ApplyState();
@@ -1394,20 +1380,6 @@ namespace MalatangStory.Game
         private void EnsureInitialized()
         {
             if (!initialized) throw new InvalidOperationException("IngredientVisuals.Buildで生成してください。");
-        }
-
-        /// <summary>描画色にNaNや無限大が含まれていないことを確認します。</summary>
-        private static void ValidateColor(Color color)
-        {
-            ValidateFinite(color.r, nameof(color)); ValidateFinite(color.g, nameof(color));
-            ValidateFinite(color.b, nameof(color)); ValidateFinite(color.a, nameof(color));
-        }
-
-        /// <summary>入力値が有限であることを確認します。</summary>
-        private static void ValidateFinite(float value, string name)
-        {
-            if (float.IsNaN(value) || float.IsInfinity(value))
-                throw new ArgumentOutOfRangeException(name, "有限値を指定してください。");
         }
     }
 }

@@ -35,8 +35,7 @@ namespace MalatangStory.Game
             foreach (Mesh mesh in meshes)
             {
                 if (mesh == null) continue;
-                if (Application.isPlaying) UnityEngine.Object.Destroy(mesh);
-                else UnityEngine.Object.DestroyImmediate(mesh);
+                OwnedObjects.Destroy(mesh);
             }
         }
 
@@ -55,8 +54,8 @@ namespace MalatangStory.Game
             bool hasRadius = false;
             for (int i = 0; i < points.Length; i++)
             {
-                ValidateFinite(points[i].x, nameof(profile));
-                ValidateFinite(points[i].y, nameof(profile));
+                OwnedObjects.ValidateFinite(points[i].x, nameof(profile));
+                OwnedObjects.ValidateFinite(points[i].y, nameof(profile));
                 if (points[i].x < 0f) throw new ArgumentOutOfRangeException(nameof(profile), "半径は0以上にしてください。");
                 hasRadius |= points[i].x > 0f;
                 if (i > 0 && Exact(points[i], points[i - 1]))
@@ -186,7 +185,7 @@ namespace MalatangStory.Game
         /// <summary>幅width、長さlengthで、根元から先端のY変位がcurlの両面葉を生成します。根元は原点です。</summary>
         public static Mesh Leaf(float width, float length, float curl)
         {
-            ValidatePositive(width, nameof(width)); ValidatePositive(length, nameof(length)); ValidateFinite(curl, nameof(curl));
+            ValidatePositive(width, nameof(width)); ValidatePositive(length, nameof(length)); OwnedObjects.ValidateFinite(curl, nameof(curl));
             Key key = new Key("Leaf"); key.Add(width); key.Add(length); key.Add(curl);
             return Cached(key, () => BuildLeaf(width, length, curl));
         }
@@ -780,39 +779,33 @@ namespace MalatangStory.Game
         /// <summary>有限な可逆アフィン変換のみ受け付けます。</summary>
         private static void ValidateTransform(Matrix4x4 transform)
         {
-            for (int i = 0; i < 16; i++) ValidateFinite(transform[i], nameof(transform));
+            for (int i = 0; i < 16; i++) OwnedObjects.ValidateFinite(transform[i], nameof(transform));
             if (transform.m30 != 0f || transform.m31 != 0f || transform.m32 != 0f || transform.m33 != 1f)
                 throw new ArgumentException("透視変換ではなくアフィン変換を指定してください。", nameof(transform));
             float determinant = transform.determinant;
-            ValidateFinite(determinant, nameof(transform));
+            OwnedObjects.ValidateFinite(determinant, nameof(transform));
             if (determinant == 0f) throw new ArgumentException("特異行列は使用できません。", nameof(transform));
             Matrix4x4 inverse = transform.inverse;
-            for (int i = 0; i < 16; i++) ValidateFinite(inverse[i], nameof(transform));
+            for (int i = 0; i < 16; i++) OwnedObjects.ValidateFinite(inverse[i], nameof(transform));
         }
 
         /// <summary>各座標が有限か検査します。</summary>
         private static void ValidateVector(Vector3 value, string name)
         {
-            ValidateFinite(value.x, name); ValidateFinite(value.y, name); ValidateFinite(value.z, name);
-        }
-
-        /// <summary>NaNと無限値を拒否します。</summary>
-        private static void ValidateFinite(float value, string name)
-        {
-            if (float.IsNaN(value) || float.IsInfinity(value)) throw new ArgumentOutOfRangeException(name, "有限値を指定してください。");
+            OwnedObjects.ValidateFinite(value.x, name); OwnedObjects.ValidateFinite(value.y, name); OwnedObjects.ValidateFinite(value.z, name);
         }
 
         /// <summary>正の有限値を検査します。</summary>
         private static void ValidatePositive(float value, string name)
         {
-            ValidateFinite(value, name);
+            OwnedObjects.ValidateFinite(value, name);
             if (value <= 0f) throw new ArgumentOutOfRangeException(name, "正の値を指定してください。");
         }
 
         /// <summary>非負の有限値を検査します。</summary>
         private static void ValidateNonnegative(float value, string name)
         {
-            ValidateFinite(value, name);
+            OwnedObjects.ValidateFinite(value, name);
             if (value < 0f) throw new ArgumentOutOfRangeException(name, "0以上の値を指定してください。");
         }
 
@@ -901,7 +894,7 @@ namespace MalatangStory.Game
                 if (Normals.Length == 0) Normals = CalculateNormals(Positions, Triangles);
                 else for (int i = 0; i < Normals.Length; i++) Normals[i] = Normalize(Normals[i]);
                 if (Uvs.Length == 0) Uvs = new Vector2[Positions.Length];
-                foreach (Vector2 uv in Uvs) { ValidateFinite(uv.x, nameof(mesh)); ValidateFinite(uv.y, nameof(mesh)); }
+                foreach (Vector2 uv in Uvs) { OwnedObjects.ValidateFinite(uv.x, nameof(mesh)); OwnedObjects.ValidateFinite(uv.y, nameof(mesh)); }
             }
 
             /// <summary>統合では保持しない副属性もキーに含め、異なる入力構造を混同しません。</summary>
@@ -958,7 +951,7 @@ namespace MalatangStory.Game
             {
                 EnsureBudget((long)positions.Count + 1);
                 ValidateVector(position, nameof(position));
-                ValidateFinite(uv.x, nameof(uv)); ValidateFinite(uv.y, nameof(uv));
+                OwnedObjects.ValidateFinite(uv.x, nameof(uv)); OwnedObjects.ValidateFinite(uv.y, nameof(uv));
                 Vector3 unit = Normalize(normal);
                 int index = positions.Count;
                 positions.Add(position); normals.Add(unit); uvs.Add(uv);
@@ -1010,8 +1003,7 @@ namespace MalatangStory.Game
                 }
                 catch
                 {
-                    if (Application.isPlaying) UnityEngine.Object.Destroy(mesh);
-                    else UnityEngine.Object.DestroyImmediate(mesh);
+                    OwnedObjects.Destroy(mesh);
                     throw;
                 }
             }

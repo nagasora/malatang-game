@@ -199,7 +199,7 @@ namespace MalatangStory.Game
                 {
                     int a = layer * layerSize + r * stride + c;
                     if (layer == 0) Grid(triangles, a, stride);
-                    else { Triangle(triangles, a, a + 1, a + stride); Triangle(triangles, a + 1, a + stride + 1, a + stride); }
+                    else { FoodKit.Triangle(triangles, a, a + 1, a + stride); FoodKit.Triangle(triangles, a + 1, a + stride + 1, a + stride); }
                 }
             }
             for (int r = 0; r < rows; r++)
@@ -259,7 +259,7 @@ namespace MalatangStory.Game
                 }
                 texture.SetPixels(pixels); texture.Apply(true, true); return texture;
             }
-            catch { FoodKit.Release(texture); throw; }
+            catch { OwnedObjects.Destroy(texture); throw; }
         }
 
         /// <summary>六面を別法線・別UVで生成し、厚揚げでは一面だけを白い切断面に分離します。</summary>
@@ -339,26 +339,20 @@ namespace MalatangStory.Game
         /// <summary>行方向と列方向の格子を二枚の三角形で張ります。</summary>
         private static void Grid(List<int> triangles, int a, int stride)
         {
-            Triangle(triangles, a, a + stride, a + 1); Triangle(triangles, a + 1, a + stride, a + stride + 1);
+            FoodKit.Triangle(triangles, a, a + stride, a + 1); FoodKit.Triangle(triangles, a + 1, a + stride, a + stride + 1);
         }
 
         /// <summary>帯の上下二層の外縁を閉じます。</summary>
         private static void Bridge(List<int> triangles, int a, int b, int offset)
         {
-            Triangle(triangles, a, b, a + offset); Triangle(triangles, b, b + offset, a + offset);
-        }
-
-        /// <summary>三角形の頂点番号を記録します。</summary>
-        private static void Triangle(List<int> triangles, int a, int b, int c)
-        {
-            triangles.Add(a); triangles.Add(b); triangles.Add(c);
+            FoodKit.Triangle(triangles, a, b, a + offset); FoodKit.Triangle(triangles, b, b + offset, a + offset);
         }
 
         /// <summary>有限な頂点を検査し、失敗時の所有物を解放して法線・接線付きメッシュを返します。</summary>
         private static Mesh MeshFrom(string name, List<Vector3> vertices, List<int> triangles, List<Vector2> uv)
         {
             foreach (Vector3 vertex in vertices)
-                if (!FoodKit.Finite(vertex.x) || !FoodKit.Finite(vertex.y) || !FoodKit.Finite(vertex.z))
+                if (!float.IsFinite(vertex.x) || !float.IsFinite(vertex.y) || !float.IsFinite(vertex.z))
                     throw new ArgumentException("食材頂点には有限値が必要です。");
             Mesh mesh = new Mesh { name = name, hideFlags = HideFlags.DontSave };
             try
@@ -366,7 +360,7 @@ namespace MalatangStory.Game
                 mesh.SetVertices(vertices); mesh.SetTriangles(triangles, 0); mesh.SetUVs(0, uv);
                 mesh.RecalculateNormals(); mesh.RecalculateTangents(); mesh.RecalculateBounds(); return mesh;
             }
-            catch { FoodKit.Release(mesh); throw; }
+            catch { OwnedObjects.Destroy(mesh); throw; }
         }
     }
 }

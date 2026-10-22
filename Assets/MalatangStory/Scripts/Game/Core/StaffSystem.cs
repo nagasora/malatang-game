@@ -44,7 +44,7 @@ namespace MalatangStory.Game
                     else if (S.dirtyTables.Count > 0 && !S.staff.Any(x => x != member && x.task == "clean")) { task = "clean"; target = S.dirtyTables[0].ToString(); }
                     break;
                 case StaffRole.Cashier:
-                    var waiting = S.orders.FirstOrDefault(o => (o.stage == OrderStage.Waiting || o.stage == OrderStage.Ordering) && Available(o));
+                    var waiting = S.orders.FirstOrDefault(o => o.IsAtRegister && Available(o));
                     if (waiting != null) { task = "register"; target = waiting.id; }
                     break;
                 case StaffRole.Cook:

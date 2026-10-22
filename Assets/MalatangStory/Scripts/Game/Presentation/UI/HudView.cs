@@ -105,7 +105,7 @@ namespace MalatangStory.Game
         }
 
         private IEnumerable<CustomerOrder> VisibleOrders()
-            => Sim.Active.OrderBy(o => o.stage == OrderStage.Ready ? 0 : o.stage == OrderStage.Waiting || o.stage == OrderStage.Ordering ? 2 : 1).ThenBy(o => o.elapsed > 0 ? -o.elapsed : 0);
+            => Sim.Active.OrderBy(o => o.stage == OrderStage.Ready ? 0 : o.IsAtRegister ? 2 : 1).ThenBy(o => o.elapsed > 0 ? -o.elapsed : 0);
 
         private void BuildTicket(CustomerOrder order)
         {

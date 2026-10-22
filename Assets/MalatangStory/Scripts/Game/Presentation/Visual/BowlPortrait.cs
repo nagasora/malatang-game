@@ -61,7 +61,7 @@ namespace MalatangStory.Game
         {
             if (capturing) throw new InvalidOperationException("一杯の撮影中にはキャッシュを破棄できません。");
             foreach (Texture2D image in Images.Values)
-                if (image != null) DestroyOwned(image);
+                if (image != null) OwnedObjects.Destroy(image);
             Images.Clear();
             AccessOrder.Clear();
             GameObject previousStudio = studio;
@@ -72,7 +72,7 @@ namespace MalatangStory.Game
             if (previousStudio != null)
             {
                 previousStudio.SetActive(false);
-                DestroyOwned(previousStudio);
+                OwnedObjects.Destroy(previousStudio);
             }
         }
 
@@ -124,7 +124,7 @@ namespace MalatangStory.Game
             }
             catch
             {
-                if (image != null) DestroyOwned(image);
+                if (image != null) OwnedObjects.Destroy(image);
                 throw;
             }
             finally { capturing = false; }
@@ -155,7 +155,7 @@ namespace MalatangStory.Game
                 if (image != null && protectedImages.Contains(image)) { index++; continue; }
                 AccessOrder.RemoveAt(index);
                 Images.Remove(key);
-                if (image != null) DestroyOwned(image);
+                if (image != null) OwnedObjects.Destroy(image);
             }
         }
 
@@ -213,7 +213,7 @@ namespace MalatangStory.Game
                 captureCamera = null;
                 StudioLights.Clear();
                 failedStudio.SetActive(false);
-                DestroyOwned(failedStudio);
+                OwnedObjects.Destroy(failedStudio);
                 throw;
             }
         }
@@ -385,9 +385,9 @@ namespace MalatangStory.Game
                     RenderTexture.active = previousActive;
                     if (captureCamera != null) captureCamera.targetTexture = previousTarget;
                     if (target != null) RenderTexture.ReleaseTemporary(target);
-                    if (model != null) { model.SetActive(false); DestroyOwned(model); }
-                    if (readback != null) DestroyOwned(readback);
-                    if (image != null) DestroyOwned(image);
+                    if (model != null) { model.SetActive(false); OwnedObjects.Destroy(model); }
+                    if (readback != null) OwnedObjects.Destroy(readback);
+                    if (image != null) OwnedObjects.Destroy(image);
                 }
             }
         }
@@ -499,13 +499,6 @@ namespace MalatangStory.Game
                 foreach (Light light in suspended)
                     if (light != null) light.enabled = true;
             }
-        }
-
-        /// <summary>実行モードに合わせて所有する Unity オブジェクトを破棄します。</summary>
-        private static void DestroyOwned(UnityEngine.Object value)
-        {
-            if (Application.isPlaying) UnityEngine.Object.Destroy(value);
-            else UnityEngine.Object.DestroyImmediate(value);
         }
     }
 

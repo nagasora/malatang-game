@@ -151,7 +151,7 @@ namespace MalatangStory.Game
             SelectedOrderId = id;
             var order = Selected;
             if (order == null) return;
-            bool walksAway = order.stage == OrderStage.Waiting || order.stage == OrderStage.Ordering || order.stage == OrderStage.Ready;
+            bool walksAway = order.IsAtRegister || order.stage == OrderStage.Ready;
             if (walksAway && (Screen == GameScreen.Cooking || Screen == GameScreen.Register)) Open(GameScreen.Store);
             switch (order.stage)
             {

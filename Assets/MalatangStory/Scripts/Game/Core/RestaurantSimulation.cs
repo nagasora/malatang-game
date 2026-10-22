@@ -92,7 +92,7 @@ namespace MalatangStory.Game
         }
 
         /// <summary>まだ提供・取消されていない注文。</summary>
-        public IEnumerable<CustomerOrder> Active => State.orders.Where(x => x.stage != OrderStage.Served && x.stage != OrderStage.Cancelled);
+        public IEnumerable<CustomerOrder> Active => State.orders.Where(x => !x.IsClosed);
 
         /// <summary>レジに並んでいる客（受付前）。</summary>
         public IEnumerable<CustomerOrder> Queue => State.orders.Where(x => x.stage == OrderStage.Waiting);
@@ -226,7 +226,7 @@ namespace MalatangStory.Game
         {
             State.phase = DayPhase.Closing;
             // 会計前の客は受付終了で帰ってもらう（レジで話している途中の客も、まだ支払っていない）。
-            foreach (var waiting in Active.Where(x => x.stage == OrderStage.Waiting || x.stage == OrderStage.Ordering).ToArray()) Cancel(waiting.id, false);
+            foreach (var waiting in Active.Where(x => x.IsAtRegister).ToArray()) Cancel(waiting.id, false);
             Emit(SimEventKind.Closing);
             Notify("20:00 受付終了。残りの注文を仕上げましょう。");
         }
@@ -271,7 +271,7 @@ namespace MalatangStory.Game
 
         private void TickOrder(CustomerOrder order, float seconds, bool tutorial)
         {
-            if (order.stage == OrderStage.Served || order.stage == OrderStage.Cancelled)
+            if (order.IsClosed)
             {
                 order.visualSeconds += seconds;
                 if (order.stage == OrderStage.Served && order.visualState == "eat")
@@ -345,7 +345,7 @@ namespace MalatangStory.Game
 
         private void AssignSeats()
         {
-            foreach (var order in State.orders.Where(o => o.seat < 0 && !o.takeout && SeatNeeded(o)).ToArray())
+            foreach (var order in State.orders.Where(o => o.seat < 0 && !o.takeout && o.AwaitsBowl).ToArray())
             {
                 if (order.seat >= 0) continue;
                 if (order.groupId.StartsWith("pair-", StringComparison.Ordinal)) { AssignPair(order); continue; }
@@ -362,7 +362,7 @@ namespace MalatangStory.Game
         private void AssignPair(CustomerOrder order)
         {
             var mates = State.orders.Where(o => o.groupId == order.groupId && o.stage != OrderStage.Cancelled && o.visualState != "leave").ToList();
-            if (mates.Any(o => o.seat < 0 && !SeatNeeded(o))) return;
+            if (mates.Any(o => o.seat < 0 && !o.AwaitsBowl)) return;
             var unseated = mates.Where(o => o.seat < 0).ToList();
             var seated = mates.Where(o => o.seat >= 0).Select(o => DiningLayout.TableOfSeat(o.seat)).ToList();
             var free = DiningLayout.FreeSeats(State).GroupBy(x => x.Table.uid)
@@ -373,10 +373,6 @@ namespace MalatangStory.Game
             for (int i = 0; i < unseated.Count && i < seats.Count; i++) unseated[i].seat = seats[i].SeatId;
             Changed?.Invoke();
         }
-
-        private static bool SeatNeeded(CustomerOrder o)
-            => (o.stage == OrderStage.Selecting && o.paidFen > 0) || o.stage == OrderStage.Weighed || o.stage == OrderStage.Heating || o.stage == OrderStage.Drained
-            || o.stage == OrderStage.Finishing || o.stage == OrderStage.Ready;
 
         private SeatInfo? PickSeat(CustomerOrder order)
         {

@@ -118,8 +118,8 @@ namespace MalatangStory.Game
         public static Texture2D WoodPlanks(int size, Color light, Color dark, int seed)
         {
             ValidateSize(size);
-            ValidateColor(light, nameof(light));
-            ValidateColor(dark, nameof(dark));
+            OwnedObjects.ValidateColor(light, nameof(light));
+            OwnedObjects.ValidateColor(dark, nameof(dark));
             return Texture(Key(nameof(WoodPlanks), size, seed, 0, 0f, light, dark), size, size, true,
                 (int x, int y) =>
                 {
@@ -140,8 +140,8 @@ namespace MalatangStory.Game
         public static Texture2D Tiles(int size, Color tile, Color grout, int count)
         {
             ValidateGrid(size, count);
-            ValidateColor(tile, nameof(tile));
-            ValidateColor(grout, nameof(grout));
+            OwnedObjects.ValidateColor(tile, nameof(tile));
+            OwnedObjects.ValidateColor(grout, nameof(grout));
             return Texture(Key(nameof(Tiles), size, count, 0, 0f, tile, grout), size, size, true,
                 (int x, int y) =>
                 {
@@ -158,7 +158,7 @@ namespace MalatangStory.Game
         public static Texture2D Noise(int size, float scale, int seed)
         {
             ValidateSize(size);
-            ValidateFinite(scale, nameof(scale));
+            OwnedObjects.ValidateFinite(scale, nameof(scale));
             if (scale <= 0f || scale > MaximumSize) throw new ArgumentOutOfRangeException(nameof(scale));
             return Texture(Key(nameof(Noise), size, seed, 0, scale, default(Color), default(Color)), size, size, true,
                 (int x, int y) =>
@@ -172,7 +172,7 @@ namespace MalatangStory.Game
         public static Texture2D Fabric(int size, Color color)
         {
             ValidateSize(size);
-            ValidateColor(color, nameof(color));
+            OwnedObjects.ValidateColor(color, nameof(color));
             return Texture(Key(nameof(Fabric), size, 0, 0, 0f, color, default(Color)), size, size, true,
                 (int x, int y) =>
                 {
@@ -187,8 +187,8 @@ namespace MalatangStory.Game
         public static Texture2D Wallpaper(int size, Color background, Color pattern)
         {
             ValidateSize(size);
-            ValidateColor(background, nameof(background));
-            ValidateColor(pattern, nameof(pattern));
+            OwnedObjects.ValidateColor(background, nameof(background));
+            OwnedObjects.ValidateColor(pattern, nameof(pattern));
             Vector2[] meander = { V(0, 4), V(3, 4), V(3, 1), V(9, 1), V(9, 7), V(5, 7), V(5, 4), V(7, 4) };
             Func<Vector2, float> fret = Polyline(0.42f, meander);
             Func<Vector2, float> curl = Arc(V(0, 0), 1.35f, -0.5f, Mathf.PI * 1.6f, 0.24f);
@@ -220,8 +220,8 @@ namespace MalatangStory.Game
         public static Texture2D Brick(int size, Color brick, Color mortar, int count = 8)
         {
             ValidateGrid(size, count);
-            ValidateColor(brick, nameof(brick));
-            ValidateColor(mortar, nameof(mortar));
+            OwnedObjects.ValidateColor(brick, nameof(brick));
+            OwnedObjects.ValidateColor(mortar, nameof(mortar));
             return Texture(Key(nameof(Brick), size, count, 0, 0f, brick, mortar), size, size, true,
                 (int x, int y) =>
                 {
@@ -239,7 +239,7 @@ namespace MalatangStory.Game
         public static Texture2D Paper(int size, Color color)
         {
             ValidateSize(size);
-            ValidateColor(color, nameof(color));
+            OwnedObjects.ValidateColor(color, nameof(color));
             return Texture(Key(nameof(Paper), size, 0, 0, 0f, color, default(Color)), size, size, true,
                 (int x, int y) => Tint(color, 0.94f + Hash(x, y, 811) * 0.07f +
                     (ValueNoise(x * 0.12f, y * 0.6f, 307) - 0.5f) * 0.04f));
@@ -330,8 +330,8 @@ namespace MalatangStory.Game
         /// <summary>上端top・下端bottomの縦グラデーションを2×96画素で生成する。</summary>
         public static Sprite VerticalGradient(Color top, Color bottom)
         {
-            ValidateColor(top, nameof(top));
-            ValidateColor(bottom, nameof(bottom));
+            OwnedObjects.ValidateColor(top, nameof(top));
+            OwnedObjects.ValidateColor(bottom, nameof(bottom));
             Tuple<string, int, int, int, float, Color, Color> key = Key(nameof(VerticalGradient), 96, 0, 0, 0f, top, bottom);
             return CachedSprite(key, () => Texture(key, 2, 96, false,
                 (int x, int y) => Color.Lerp(bottom, top, y / 95f)), Vector4.zero);
@@ -380,16 +380,9 @@ namespace MalatangStory.Game
             }
             catch
             {
-                Release(texture);
+                OwnedObjects.Destroy(texture);
                 throw;
             }
-        }
-
-        /// <summary>生成失敗時だけ未登録のUnityオブジェクトを解放する。</summary>
-        private static void Release(UnityEngine.Object value)
-        {
-            if (Application.isPlaying) UnityEngine.Object.Destroy(value);
-            else UnityEngine.Object.DestroyImmediate(value);
         }
 
         /// <summary>白色の距離場マスクからスプライトを取得する。</summary>
@@ -406,7 +399,7 @@ namespace MalatangStory.Game
         {
             Sprite cached;
             if (Sprites.TryGetValue(key, out cached) && cached != null && cached.texture != null) return cached;
-            if (cached != null) Release(cached);
+            if (cached != null) OwnedObjects.Destroy(cached);
             Texture2D texture = createTexture();
             Sprite sprite = Sprite.Create(texture, new Rect(0f, 0f, texture.width, texture.height),
                 new Vector2(0.5f, 0.5f), 100f, 0, SpriteMeshType.FullRect, border);
@@ -433,21 +426,6 @@ namespace MalatangStory.Game
         {
             ValidateSize(size);
             if (count < 1 || count > size) throw new ArgumentOutOfRangeException(nameof(count));
-        }
-
-        /// <summary>色の全成分が有限値であることを検証する。</summary>
-        private static void ValidateColor(Color color, string name)
-        {
-            ValidateFinite(color.r, name);
-            ValidateFinite(color.g, name);
-            ValidateFinite(color.b, name);
-            ValidateFinite(color.a, name);
-        }
-
-        /// <summary>NaNと無限大を拒否する。</summary>
-        private static void ValidateFinite(float value, string name)
-        {
-            if (float.IsNaN(value) || float.IsInfinity(value)) throw new ArgumentOutOfRangeException(name);
         }
 
         /// <summary>透明度を変えずにRGBの明度だけを調整する。</summary>

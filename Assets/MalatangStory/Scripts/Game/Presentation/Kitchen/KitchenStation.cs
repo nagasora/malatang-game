@@ -33,7 +33,7 @@ namespace MalatangStory.Game
         private readonly Transform root;
         private readonly IngredientCatalog catalog;
         private CustomerOrder order;
-        private Transform bowl, soupSurface, toppings, carried;
+        private Transform bowl, soupSurface, toppings;
         private readonly List<GameObject> bowlPieces = new List<GameObject>();
         private readonly KitchenDisplaySnapshot displaySnapshot;
         private readonly Transform[] baskets = new Transform[4];

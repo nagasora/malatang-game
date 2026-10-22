@@ -495,7 +495,7 @@ namespace MalatangStory.Game
                 mesh.RecalculateNormals(); mesh.RecalculateTangents(); mesh.RecalculateBounds();
                 return mesh;
             }
-            catch { FoodKit.Release(mesh); throw; }
+            catch { OwnedObjects.Destroy(mesh); throw; }
         }
 
         /// <summary>あさりのヒンジから広がる扇形の殻に、放射方向の低い稜線を付けます。</summary>
@@ -519,8 +519,8 @@ namespace MalatangStory.Game
                     int i = row * (columns + 1) + col;
                     if (row == 0)
                     {
-                        if (inside) Triangle(triangles, i, i + columns + 2, i + columns + 1);
-                        else Triangle(triangles, i, i + columns + 1, i + columns + 2);
+                        if (inside) FoodKit.Triangle(triangles, i, i + columns + 2, i + columns + 1);
+                        else FoodKit.Triangle(triangles, i, i + columns + 1, i + columns + 2);
                     }
                     else if (inside) Quad(triangles, i, i + 1, i + columns + 2, i + columns + 1);
                     else Quad(triangles, i, i + columns + 1, i + columns + 2, i + 1);
@@ -595,8 +595,8 @@ namespace MalatangStory.Game
                     vertices.Add(point); uv.Add(new Vector2(u, v));
                     if (row == rings || col == segments) continue;
                     int i = row * (segments + 1) + col;
-                    if (row != 0) Triangle(triangles, i, i + 1, i + segments + 1);
-                    if (row != rings - 1) Triangle(triangles, i + 1, i + segments + 2, i + segments + 1);
+                    if (row != 0) FoodKit.Triangle(triangles, i, i + 1, i + segments + 1);
+                    if (row != rings - 1) FoodKit.Triangle(triangles, i + 1, i + segments + 2, i + segments + 1);
                 }
             return MeshFrom("Food Wrapped Filling", vertices, triangles, uv);
         }
@@ -663,19 +663,13 @@ namespace MalatangStory.Game
                 texture.SetPixels(pixels); texture.Apply(true, true);
                 return texture;
             }
-            catch { FoodKit.Release(texture); throw; }
+            catch { OwnedObjects.Destroy(texture); throw; }
         }
 
         /// <summary>四角形を二つの三角形で登録します。</summary>
         private static void Quad(List<int> triangles, int a, int b, int c, int d)
         {
-            Triangle(triangles, a, b, c); Triangle(triangles, a, c, d);
-        }
-
-        /// <summary>三角形の頂点番号を登録します。</summary>
-        private static void Triangle(List<int> triangles, int a, int b, int c)
-        {
-            triangles.Add(a); triangles.Add(b); triangles.Add(c);
+            FoodKit.Triangle(triangles, a, b, c); FoodKit.Triangle(triangles, a, c, d);
         }
 
         /// <summary>有限な頂点から専用メッシュを確定し、失敗した場合はUnityリソースを解放します。</summary>
@@ -683,7 +677,7 @@ namespace MalatangStory.Game
             List<Vector3> normals = null)
         {
             foreach (Vector3 p in vertices)
-                if (!FoodKit.Finite(p.x) || !FoodKit.Finite(p.y) || !FoodKit.Finite(p.z))
+                if (!float.IsFinite(p.x) || !float.IsFinite(p.y) || !float.IsFinite(p.z))
                     throw new ArgumentException("食材メッシュには有限の頂点が必要です。");
             Mesh mesh = new Mesh { name = name, hideFlags = HideFlags.DontSave };
             try
@@ -693,7 +687,7 @@ namespace MalatangStory.Game
                 mesh.RecalculateTangents(); mesh.RecalculateBounds();
                 return mesh;
             }
-            catch { FoodKit.Release(mesh); throw; }
+            catch { OwnedObjects.Destroy(mesh); throw; }
         }
     }
 }

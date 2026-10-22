@@ -444,7 +444,7 @@ namespace MalatangStory.Game
         {
             if (State.tutorialComplete) return;
             var o = Find(id);
-            if (o == null || o.stage == OrderStage.Served || o.stage == OrderStage.Cancelled) return;
+            if (o == null || o.IsClosed) return;
             if (o.stockConsumed)
             {
                 foreach (string ingredient in o.selected) StockFor(ingredient).quantity++;
@@ -465,7 +465,7 @@ namespace MalatangStory.Game
         {
             if (!State.tutorialComplete) return Fail("初日の注文は取り消せません。");
             var o = Find(id);
-            if (o == null || o.stage == OrderStage.Cancelled || o.stage == OrderStage.Served) return false;
+            if (o == null || o.IsClosed) return false;
             State.moneyFen -= o.paidFen;
             State.report.revenueFen -= o.paidFen;
             State.report.refundsFen += o.paidFen;

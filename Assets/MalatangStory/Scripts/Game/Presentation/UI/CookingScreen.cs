@@ -74,7 +74,7 @@ namespace MalatangStory.Game
             var o = Order;
             App.World.Kitchen?.SetOrder(o);
             RefreshSwitcher();
-            if (o == null || o.stage == OrderStage.Cancelled || o.stage == OrderStage.Served)
+            if (o == null || o.IsClosed)
             {
                 if (bodySignature != "none") { bodySignature = "none"; ticketSignature = ""; ResetDynamicRefs(); Clear(ticket); Clear(body); BuildEmpty(); }
                 return;

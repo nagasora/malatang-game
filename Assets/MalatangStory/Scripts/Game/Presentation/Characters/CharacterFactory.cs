@@ -109,7 +109,7 @@ namespace MalatangStory.Game
             catch
             {
                 ReleaseVisual(root.transform);
-                DestroyObject(root);
+                OwnedObjects.Destroy(root);
                 throw;
             }
         }
@@ -173,7 +173,7 @@ namespace MalatangStory.Game
             catch
             {
                 ReleaseVisual(visual);
-                DestroyObject(visual.gameObject);
+                OwnedObjects.Destroy(visual.gameObject);
                 throw;
             }
         }
@@ -189,7 +189,7 @@ namespace MalatangStory.Game
             List<Mesh> ownedMeshes;
             if (!OwnedVisualMeshes.TryGetValue(visual, out ownedMeshes)) return;
             OwnedVisualMeshes.Remove(visual);
-            foreach (Mesh mesh in ownedMeshes) DestroyObject(mesh);
+            foreach (Mesh mesh in ownedMeshes) OwnedObjects.Destroy(mesh);
             ownedMeshes.Clear();
         }
 
@@ -852,7 +852,7 @@ namespace MalatangStory.Game
             }
             catch
             {
-                DestroyObject(material);
+                OwnedObjects.Destroy(material);
                 throw;
             }
         }
@@ -867,14 +867,6 @@ namespace MalatangStory.Game
                 throw new InvalidOperationException("MaterialProviderが有効なシェーダー付きマテリアルを返しませんでした。");
             Materials[color] = material;
             return material;
-        }
-
-        /// <summary>実行中は遅延破棄し、編集時は即座にUnityオブジェクトを破棄する。</summary>
-        private static void DestroyObject(UnityEngine.Object target)
-        {
-            if (target == null) return;
-            if (Application.isPlaying) UnityEngine.Object.Destroy(target);
-            else UnityEngine.Object.DestroyImmediate(target);
         }
 
         /// <summary>合成用の共有球メッシュを遅延生成する。</summary>
@@ -1147,7 +1139,7 @@ namespace MalatangStory.Game
                 }
                 finally
                 {
-                    foreach (Mesh mesh in temporaryMeshes) DestroyObject(mesh);
+                    foreach (Mesh mesh in temporaryMeshes) OwnedObjects.Destroy(mesh);
                 }
             }
         }

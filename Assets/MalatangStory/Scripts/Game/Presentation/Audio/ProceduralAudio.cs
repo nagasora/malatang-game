@@ -865,7 +865,7 @@ namespace MalatangStory.Game
         public void PlayAt(Sfx id, Vector3 position, float volume = 1f)
         {
             int index = CheckedIndex((int)id, EffectCount, nameof(id));
-            if (!Finite(position.x) || !Finite(position.y) || !Finite(position.z))
+            if (!float.IsFinite(position.x) || !float.IsFinite(position.y) || !float.IsFinite(position.z))
                 throw new ArgumentException("再生位置は有限値で指定してください。", nameof(position));
             if (!isActiveAndEnabled) return;
             Initialize();
@@ -1087,11 +1087,6 @@ namespace MalatangStory.Game
             return float.IsNaN(value) ? 0 : Mathf.Clamp01(value);
         }
 
-        /// <summary>浮動小数点値が有限かを調べる。</summary>
-        private static bool Finite(float value)
-        {
-            return !float.IsNaN(value) && !float.IsInfinity(value);
-        }
 
         /// <summary>無効な列挙値を初期化や配列アクセスの前に拒否する。</summary>
         private static int CheckedIndex(int index, int count, string name)

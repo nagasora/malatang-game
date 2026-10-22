@@ -13,7 +13,7 @@ namespace MalatangStory.Game
         /// <summary>経緯線UVと解析的な滑らか法線を持つ、ノイズで歪んだ単位楕円体を生成します。</summary>
         public static Mesh Ellipsoid(int seed = 0, float noise = .04f, int segments = 10, int rings = 6)
         {
-            if (segments < 3 || segments > 64 || rings < 2 || rings > 32 || !Finite(noise) || noise < 0f || noise > .5f)
+            if (segments < 3 || segments > 64 || rings < 2 || rings > 32 || !float.IsFinite(noise) || noise < 0f || noise > .5f)
                 throw new ArgumentOutOfRangeException(nameof(segments), "球の分割数または歪み量が不正です。");
             List<Vector3> v = new List<Vector3>(); List<Vector2> uv = new List<Vector2>();
             List<int> t = new List<int>(); List<Vector3> normals = new List<Vector3>();
@@ -181,7 +181,7 @@ namespace MalatangStory.Game
         /// <summary>円い外周、中央孔と放射状の楕円孔を持つ輪切りを作ります。格子を使わず孔の輪郭を直接接続します。</summary>
         public static Mesh RadialPerforatedSlice(float radius, float thickness, int holes = 8, int resolution = 14)
         {
-            if (!Finite(radius) || !Finite(thickness) || radius <= 0f || thickness <= 0f || holes < 7 || holes > 9 || resolution < 8 || resolution > 20)
+            if (!float.IsFinite(radius) || !float.IsFinite(thickness) || radius <= 0f || thickness <= 0f || holes < 7 || holes > 9 || resolution < 8 || resolution > 20)
                 throw new ArgumentOutOfRangeException(nameof(radius), "輪切りの寸法または孔の分割数が不正です。");
             List<Vector3> vertices = new List<Vector3>(); List<Vector2> uv = new List<Vector2>(); List<int> triangles = new List<int>();
             float halfSector = Mathf.PI / holes;
@@ -300,7 +300,7 @@ namespace MalatangStory.Game
         }
 
         /// <summary>三角形の頂点番号を登録します。</summary>
-        private static void Triangle(List<int> triangles, int a, int b, int c)
+        internal static void Triangle(List<int> triangles, int a, int b, int c)
         {
             triangles.Add(a); triangles.Add(b); triangles.Add(c);
         }
@@ -309,7 +309,7 @@ namespace MalatangStory.Game
         private static Mesh Finish(string name, List<Vector3> vertices, List<int> triangles, List<Vector2> uv)
         {
             foreach (Vector3 point in vertices)
-                if (!Finite(point.x) || !Finite(point.y) || !Finite(point.z))
+                if (!float.IsFinite(point.x) || !float.IsFinite(point.y) || !float.IsFinite(point.z))
                     throw new ArgumentException("メッシュの頂点には有限値が必要です。");
             Mesh mesh = new Mesh { name = name, hideFlags = HideFlags.DontSave };
             try
@@ -317,27 +317,14 @@ namespace MalatangStory.Game
                 mesh.SetVertices(vertices); mesh.SetTriangles(triangles, 0); mesh.SetUVs(0, uv);
                 mesh.RecalculateNormals(); mesh.RecalculateTangents(); mesh.RecalculateBounds(); return mesh;
             }
-            catch { Release(mesh); throw; }
+            catch { OwnedObjects.Destroy(mesh); throw; }
         }
 
         /// <summary>面の寸法と分割数を検査し、空面と過大な生成を防ぎます。</summary>
         private static void ValidateGrid(float width, float length, int rows, int columns)
         {
-            if (!Finite(width) || !Finite(length) || width <= 0f || length <= 0f || rows < 1 || columns < 2 || rows > 32 || columns > 32)
+            if (!float.IsFinite(width) || !float.IsFinite(length) || width <= 0f || length <= 0f || rows < 1 || columns < 2 || rows > 32 || columns > 32)
                 throw new ArgumentOutOfRangeException(nameof(width), "面の寸法または分割数が不正です。");
-        }
-
-        /// <summary>NaNと無限大を除外します。</summary>
-        internal static bool Finite(float value)
-        {
-            return !float.IsNaN(value) && !float.IsInfinity(value);
-        }
-
-        /// <summary>プレイ中はフレーム終端、それ以外は直ちに所有物を破棄します。</summary>
-        internal static void Release(UnityEngine.Object value)
-        {
-            if (value == null) return;
-            if (Application.isPlaying) UnityEngine.Object.Destroy(value); else UnityEngine.Object.DestroyImmediate(value);
         }
     }
 }

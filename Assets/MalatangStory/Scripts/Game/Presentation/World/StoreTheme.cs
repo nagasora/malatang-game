@@ -94,7 +94,7 @@ namespace MalatangStory.Game
         private void UpdateMaterials(string id)
         {
             foreach (Material material in materials.Values) material.SetTexture("_BaseMap", null);
-            foreach (Texture2D texture in textures) Release(texture);
+            foreach (Texture2D texture in textures) OwnedObjects.Destroy(texture);
             textures.Clear();
             Palette p = Colors(id);
             Texture2D wall = Own(PatternTexture(Surface.Wall, p.Wall, p.Pattern));
@@ -451,7 +451,7 @@ namespace MalatangStory.Game
         /// <summary>一度も表示しなかった装飾も含め、店舗が所有する結合メッシュだけを解放します。</summary>
         private void ReleaseDecorationMeshes()
         {
-            foreach (Mesh mesh in decorationMeshes) Release(mesh);
+            foreach (Mesh mesh in decorationMeshes) OwnedObjects.Destroy(mesh);
             decorationMeshes.Clear();
         }
 
@@ -464,7 +464,7 @@ namespace MalatangStory.Game
             {
                 if (decoration == null) continue;
                 decoration.SetActive(false);
-                Release(decoration);
+                OwnedObjects.Destroy(decoration);
             }
             decorations.Clear();
             ReleaseDecorationMeshes();
@@ -474,18 +474,10 @@ namespace MalatangStory.Game
         private void OnDestroy()
         {
             ReleaseDecorationMeshes();
-            foreach (Material material in materials.Values) Release(material);
+            foreach (Material material in materials.Values) OwnedObjects.Destroy(material);
             materials.Clear();
-            foreach (Texture2D texture in textures) Release(texture);
+            foreach (Texture2D texture in textures) OwnedObjects.Destroy(texture);
             textures.Clear();
-        }
-
-        /// <summary>実行時と編集時それぞれの安全な方法で所有物を破棄します。</summary>
-        private static void Release(Object resource)
-        {
-            if (resource == null) return;
-            if (Application.isPlaying) Destroy(resource);
-            else DestroyImmediate(resource);
         }
 
         /// <summary>整数のRGBから不透明色へ変換します。</summary>

@@ -137,7 +137,7 @@ namespace MalatangStory.Game
             var judges = s.orders.Where(o => o.archetype == "judge").ToList();
             if (judges.Count == 0) return;
             bool closing = s.phase == DayPhase.Report;
-            if (!closing && judges.Any(o => o.stage != OrderStage.Served && o.stage != OrderStage.Cancelled)) return;
+            if (!closing && judges.Any(o => !o.IsClosed)) return;
             s.report.contestConcluded = true;
             // 食べずに帰った審査員は0点として平均に含める（待たせたことも審査のうち）。
             float average = judges.Sum(o => o.stage == OrderStage.Served ? o.quality : 0f) / judges.Count;

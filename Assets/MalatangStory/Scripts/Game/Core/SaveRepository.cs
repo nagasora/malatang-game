@@ -323,7 +323,7 @@ namespace MalatangStory.Game
             if (s.phase == DayPhase.Open || s.phase == DayPhase.Closing)
             {
                 // v1 は受付時に会計しており v2 の工程に対応しないため、営業中の注文は返金して閉店扱いにする。
-                foreach (var o in s.orders.Where(o => o.stage != OrderStage.Served && o.stage != OrderStage.Cancelled))
+                foreach (var o in s.orders.Where(o => !o.IsClosed))
                 {
                     s.moneyFen -= o.paidFen; s.report.revenueFen -= o.paidFen; s.report.refundsFen += o.paidFen; s.report.lost++;
                     o.stage = OrderStage.Cancelled;

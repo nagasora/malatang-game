@@ -262,7 +262,7 @@ namespace MalatangStory.Game
             {
                 previous.name = "Retired Soup Seasoning";
                 previous.gameObject.SetActive(false);
-                DestroyCached(previous.gameObject);
+                OwnedObjects.Destroy(previous.gameObject);
             }
             if (appearance.SoupId != "mala" && appearance.SoupId != "dry") return;
             SeasoningMeshes meshes = GetSeasoningMeshes(appearance);
@@ -380,23 +380,15 @@ namespace MalatangStory.Game
             }
         }
 
-        /// <summary>実行モードに応じて所有オブジェクトの破棄方法を切り替えます。</summary>
-        private static void DestroyCached(UnityEngine.Object value)
-        {
-            if (value == null) return;
-            if (Application.isPlaying) UnityEngine.Object.Destroy(value);
-            else UnityEngine.Object.DestroyImmediate(value);
-        }
-
         /// <summary>液面テクスチャと標準トッピングの共有メッシュを、描画利用終了後に解放します。</summary>
         public static void ReleaseAll()
         {
-            foreach (Texture2D texture in Textures.Values) DestroyCached(texture);
+            foreach (Texture2D texture in Textures.Values) OwnedObjects.Destroy(texture);
             Textures.Clear();
             foreach (SeasoningMeshes meshes in Seasonings.Values)
             {
-                DestroyCached(meshes.Sesame);
-                DestroyCached(meshes.Chili);
+                OwnedObjects.Destroy(meshes.Sesame);
+                OwnedObjects.Destroy(meshes.Chili);
             }
             Seasonings.Clear();
         }

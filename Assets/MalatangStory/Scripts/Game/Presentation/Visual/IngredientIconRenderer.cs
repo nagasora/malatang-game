@@ -129,7 +129,7 @@ namespace MalatangStory.Game
             catch
             {
                 studio.SetActive(false);
-                DestroyOwned(studio);
+                OwnedObjects.Destroy(studio);
                 studio = null;
                 captureCamera = null;
                 studioLights.Clear();
@@ -394,9 +394,9 @@ namespace MalatangStory.Game
                 RenderTexture.active = previous;
                 captureCamera.targetTexture = null;
                 if (target != null) RenderTexture.ReleaseTemporary(target);
-                if (model != null) { model.SetActive(false); DestroyOwned(model); }
-                if (texture != null) DestroyOwned(texture);
-                if (readback != null) DestroyOwned(readback);
+                if (model != null) { model.SetActive(false); OwnedObjects.Destroy(model); }
+                if (texture != null) OwnedObjects.Destroy(texture);
+                if (readback != null) OwnedObjects.Destroy(readback);
             }
         }
 
@@ -551,26 +551,19 @@ namespace MalatangStory.Game
             {
                 if (sprite == null) continue;
                 Texture2D texture = sprite.texture;
-                DestroyOwned(sprite);
-                if (texture != null) DestroyOwned(texture);
+                OwnedObjects.Destroy(sprite);
+                if (texture != null) OwnedObjects.Destroy(texture);
             }
             icons.Clear(); pending.Clear(); scheduled.Clear();
             SetStudioLighting(false);
             if (studio != null)
             {
                 studio.SetActive(false);
-                DestroyOwned(studio);
+                OwnedObjects.Destroy(studio);
             }
             studioLights.Clear();
             studio = null;
             captureCamera = null;
-        }
-
-        /// <summary>実行モードに応じて所有リソースを破棄します。</summary>
-        private static void DestroyOwned(UnityEngine.Object value)
-        {
-            if (Application.isPlaying) UnityEngine.Object.Destroy(value);
-            else UnityEngine.Object.DestroyImmediate(value);
         }
     }
 }

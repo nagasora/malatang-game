@@ -53,7 +53,7 @@ namespace MalatangStory.Game
         /// <summary>発光色と強度を持つ共有マテリアルを返します。</summary>
         public static Material Emissive(Color baseColor, Color emission, float intensity = 1f)
         {
-            Validate(intensity, nameof(intensity));
+            OwnedObjects.ValidateFinite(intensity, nameof(intensity));
             return Get("RestaurantLitEmissive", baseColor, emission * Mathf.Max(0f, intensity), 0.3f, 0f, null, Vector2.one, false);
         }
 
@@ -75,8 +75,7 @@ namespace MalatangStory.Game
             foreach (Material material in Cache.Values)
             {
                 if (material == null) continue;
-                if (Application.isPlaying) UnityEngine.Object.Destroy(material);
-                else UnityEngine.Object.DestroyImmediate(material);
+                OwnedObjects.Destroy(material);
             }
             Cache.Clear();
         }
@@ -84,9 +83,9 @@ namespace MalatangStory.Game
         /// <summary>生成条件に一致する共有素材を取得または構築します。</summary>
         private static Material Get(string kind, Color color, Color emission, float smoothness, float metallic, Texture2D texture, Vector2 tiling, bool additive)
         {
-            Validate(smoothness, nameof(smoothness)); Validate(metallic, nameof(metallic));
-            Validate(tiling.x, nameof(tiling)); Validate(tiling.y, nameof(tiling));
-            ValidateColor(color); ValidateColor(emission);
+            OwnedObjects.ValidateFinite(smoothness, nameof(smoothness)); OwnedObjects.ValidateFinite(metallic, nameof(metallic));
+            OwnedObjects.ValidateFinite(tiling.x, nameof(tiling)); OwnedObjects.ValidateFinite(tiling.y, nameof(tiling));
+            OwnedObjects.ValidateColor(color, nameof(color)); OwnedObjects.ValidateColor(emission, nameof(emission));
             smoothness = Mathf.Clamp01(smoothness); metallic = Mathf.Clamp01(metallic);
             Key key = new Key(kind, color, emission, smoothness, metallic, texture, tiling, additive);
             if (Cache.TryGetValue(key, out Material cached) && cached != null) return cached;
@@ -143,11 +142,5 @@ namespace MalatangStory.Game
         /// <summary>存在するシェーダープロパティへ色を設定します。</summary>
         private static void SetColor(Material material, string property, Color value)
         { if (material.HasProperty(property)) material.SetColor(property, value); }
-        /// <summary>有限な数値であることを検証します。</summary>
-        private static void Validate(float value, string name)
-        { if (float.IsNaN(value) || float.IsInfinity(value)) throw new ArgumentOutOfRangeException(name); }
-        /// <summary>色の全成分が有限であることを検証します。</summary>
-        private static void ValidateColor(Color color)
-        { Validate(color.r, nameof(color)); Validate(color.g, nameof(color)); Validate(color.b, nameof(color)); Validate(color.a, nameof(color)); }
     }
 }

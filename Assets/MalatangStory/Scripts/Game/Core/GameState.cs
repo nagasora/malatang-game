@@ -113,6 +113,16 @@ namespace MalatangStory.Game
         public string review = "";
         public string visualState = "enter";
         public float visualSeconds;
+
+        /// <summary>提供済みまたは取消済みで、これ以上進まない注文か。</summary>
+        public bool IsClosed => stage == OrderStage.Served || stage == OrderStage.Cancelled;
+
+        /// <summary>レジの前にいて、まだ会計を済ませていない（列に並んでいる・注文を話している）か。</summary>
+        public bool IsAtRegister => stage == OrderStage.Waiting || stage == OrderStage.Ordering;
+
+        /// <summary>会計を済ませ、一杯ができあがるのを待っている（受け取り前）か。</summary>
+        public bool AwaitsBowl => (stage == OrderStage.Selecting && paidFen > 0) || stage == OrderStage.Weighed || stage == OrderStage.Heating
+            || stage == OrderStage.Drained || stage == OrderStage.Finishing || stage == OrderStage.Ready;
     }
 
     /// <summary>一日分の営業成績。</summary>

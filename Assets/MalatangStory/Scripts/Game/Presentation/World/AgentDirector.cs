@@ -72,8 +72,8 @@ namespace MalatangStory.Game
             var ids = new HashSet<string>(orders.Select(o => o.id));
             foreach (var stale in customers.Keys.Where(id => !ids.Contains(id)).ToArray()) Remove(stale);
             var queue = orders.Where(o => o.stage == OrderStage.Waiting).ToList();
-            var waiting = orders.Where(o => !o.takeout && o.seat < 0 && ((o.stage == OrderStage.Selecting && o.paidFen > 0) || o.stage == OrderStage.Weighed || o.stage == OrderStage.Heating || o.stage == OrderStage.Drained || o.stage == OrderStage.Finishing || o.stage == OrderStage.Ready)).ToList();
-            waiting.AddRange(orders.Where(o => o.takeout && ((o.stage == OrderStage.Selecting && o.paidFen > 0) || o.stage == OrderStage.Weighed || o.stage == OrderStage.Heating || o.stage == OrderStage.Drained || o.stage == OrderStage.Finishing || o.stage == OrderStage.Ready)));
+            var waiting = orders.Where(o => !o.takeout && o.seat < 0 && o.AwaitsBowl).ToList();
+            waiting.AddRange(orders.Where(o => o.takeout && o.AwaitsBowl));
             int rows = DiningLayout.Rows(sim.State);
             foreach (var order in orders)
             {

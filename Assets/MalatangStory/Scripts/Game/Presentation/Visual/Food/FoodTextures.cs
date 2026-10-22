@@ -49,7 +49,7 @@ namespace MalatangStory.Game
                 }
                 texture.SetPixels(pixels); texture.Apply(true, true); return texture;
             }
-            catch { FoodKit.Release(texture); throw; }
+            catch { OwnedObjects.Destroy(texture); throw; }
         }
 
         /// <summary>多層の連続ノイズを決定論的に合成します。</summary>

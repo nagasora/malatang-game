@@ -63,9 +63,9 @@ namespace MalatangStory.Game
         /// <summary>利用中のインスタンスを破棄した後に所有リソースを解放します。</summary>
         public void Dispose()
         {
-            foreach (Mesh mesh in Meshes) FoodKit.Release(mesh);
-            foreach (Material material in Materials) FoodKit.Release(material);
-            foreach (Texture2D texture in textures) FoodKit.Release(texture);
+            foreach (Mesh mesh in Meshes) OwnedObjects.Destroy(mesh);
+            foreach (Material material in Materials) OwnedObjects.Destroy(material);
+            foreach (Texture2D texture in textures) OwnedObjects.Destroy(texture);
         }
     }
 
@@ -132,22 +132,22 @@ namespace MalatangStory.Game
                     mats.Add(materials[i]); tex.Add(textures[i]); states.Add(surfaces[i]);
                 }
                 float maximum = Mathf.Max(bounds.size.x, Mathf.Max(bounds.size.y, bounds.size.z));
-                if (result.Count == 0 || triangles > 1500 || !FoodKit.Finite(maximum) || maximum < .1f || maximum > .25f)
+                if (result.Count == 0 || triangles > 1500 || !float.IsFinite(maximum) || maximum < .1f || maximum > .25f)
                     throw new InvalidOperationException($"{id}: 食材予算を超えています tris={triangles}, size={maximum}");
                 FoodModel model = new FoodModel(result.ToArray(), mats.ToArray(), tex.ToArray(), states.ToArray(), bounds, triangles);
                 for (int i = 0; i < 3; i++)
                     if (groups[i].Count > 0) { materials[i] = null; textures[i] = null; }
                 return model;
             }
-            catch { foreach (Mesh mesh in result) FoodKit.Release(mesh); throw; }
+            catch { foreach (Mesh mesh in result) OwnedObjects.Destroy(mesh); throw; }
         }
 
         /// <summary>一時部品と、完成モデルへ移譲されなかったリソースを解放します。</summary>
         public void Dispose()
         {
-            foreach (Mesh mesh in owned) FoodKit.Release(mesh); owned.Clear();
-            foreach (Texture2D texture in textures) FoodKit.Release(texture);
-            foreach (Material material in materials) FoodKit.Release(material);
+            foreach (Mesh mesh in owned) OwnedObjects.Destroy(mesh); owned.Clear();
+            foreach (Texture2D texture in textures) OwnedObjects.Destroy(texture);
+            foreach (Material material in materials) OwnedObjects.Destroy(material);
         }
 
         /// <summary>描画グループの範囲を検査します。</summary>
