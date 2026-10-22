@@ -290,8 +290,9 @@ namespace MalatangStory.Game
         /// <summary>店名を変更する。</summary>
         public void RenameStore(string name)
         {
-            if (string.IsNullOrWhiteSpace(name)) return;
-            State.storeName = name.Trim().Length > 16 ? name.Trim().Substring(0, 16) : name.Trim();
+            string clean = PlayerText.Clean(name);
+            if (clean.Length == 0) return;
+            State.storeName = clean;
             Changed?.Invoke(); Save();
         }
     }

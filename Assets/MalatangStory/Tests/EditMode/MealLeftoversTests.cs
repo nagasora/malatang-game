@@ -283,10 +283,10 @@ namespace MalatangStory.Ingredients.Tests
             finally { if (Directory.Exists(directory)) Directory.Delete(directory, true); }
         }
 
-        /// <summary>チェックサムが正しい不正家具でも主保存を拒否しバックアップを読みます。</summary>
+        /// <summary>チェックサムが正しい主保存の不正家具を除去し、残りの進行を保持します。</summary>
         [TestCase(false)]
         [TestCase(true)]
-        public void InvalidFurnitureFallsBackToValidBackup(bool nullEntry)
+        public void InvalidFurnitureIsRemovedWithoutDiscardingValidProgress(bool nullEntry)
         {
             string directory = Path.Combine(Path.GetTempPath(), "meal-backup-" + Guid.NewGuid());
             try
@@ -305,7 +305,8 @@ namespace MalatangStory.Ingredients.Tests
                     checksum = Convert.ToBase64String(sha.ComputeHash(System.Text.Encoding.UTF8.GetBytes(payload)));
                 File.WriteAllText(file, JsonUtility.ToJson(new RegressionEnvelope { payload = payload, checksum = checksum }));
                 GameState loaded = repository.Load(); Assert.NotNull(loaded); Assert.AreEqual(state.storeId, loaded.storeId);
-                StringAssert.Contains("バックアップ", repository.LastError);
+                Assert.IsNull(repository.LastError);
+                Assert.DoesNotThrow(() => SaveRepository.Validate(loaded));
                 Assert.IsTrue(loaded.furniture.All(x => x != null && Content.Furniture.Any(d => d.Id == x.defId)));
             }
             finally { if (Directory.Exists(directory)) Directory.Delete(directory, true); }
