@@ -99,7 +99,7 @@ namespace MalatangStory.Game
 
         private void BuildTicket(CustomerOrder o)
         {
-            var name = UIKit.Label(ticket, o.customerName + "　<size=15><color=#8a6a55>" + o.type + (o.takeout ? "・持ち帰り" : "") + "</color></size>", 22, UIKit.Lacquer, TextAnchor.MiddleLeft, true);
+            var name = UIKit.Label(ticket, o.customerName + "　" + o.type + (o.takeout ? "・持ち帰り" : "") + "", 22, UIKit.Lacquer, TextAnchor.MiddleLeft, true);
             UIKit.Place(name.rectTransform, new Vector2(0, 1), new Vector2(0, 0), new Vector2(320, 36));
             var chips = UIKit.Rect("Request", ticket);
             chips.gameObject.SetActive(o.stage != OrderStage.Ready);
@@ -473,7 +473,7 @@ namespace MalatangStory.Game
                 string id = condiment.Id;
                 bool wanted = o.requestedCondiments.Contains(id), disliked = o.dislikedCondiments.Contains(id);
                 var b = UIKit.Button(condRow, condiment.Name, () => Sim.AddCondiment(o.id, id), wanted ? ButtonStyle.Gold : ButtonStyle.Tab, 13);
-                if (disliked) b.GetComponentInChildren<Text>().text = condiment.Name + "\n<size=10><color=#b02a1e>抜きで</color></size>";
+                if (disliked) b.GetComponentInChildren<Text>().text = condiment.Name + "\n抜きで";
                 var count = UIKit.Label(b.transform, "", 13, UIKit.Lacquer, TextAnchor.UpperRight, true);
                 UIKit.Fill(count.rectTransform, 2, 5, 1, 2);
                 condimentCounts.Add((id, count));
@@ -621,10 +621,10 @@ namespace MalatangStory.Game
                 if (o.dropTimes[index] < 0)
                 {
                     float wait = RecommendedDrop(o, index) - o.heatSeconds;
-                    hint.text = wait <= .5f ? "<color=#c0392b><b>今！</b></color>" : "あと" + Mathf.CeilToInt(wait / Sim.CookSpeedMultiplier) + "秒で投入";
+                    hint.text = wait <= .5f ? "今！" : "あと" + Mathf.CeilToInt(wait / Sim.CookSpeedMultiplier) + "秒で投入";
                     if (drop != null) drop.transform.localScale = Vector3.one * (wait <= .5f ? 1 + Mathf.Sin(Time.unscaledTime * 10) * .06f : 1);
                 }
-                else hint.text = ratio < QualityEvaluator.PerfectDonenessMin ? "茹で中" : ratio <= QualityEvaluator.PerfectDonenessMax ? "<color=#2e8b47><b>食べごろ</b></color>" : "<color=#c0392b>煮えすぎ</color>";
+                else hint.text = ratio < QualityEvaluator.PerfectDonenessMin ? "茹で中" : ratio <= QualityEvaluator.PerfectDonenessMax ? "食べごろ" : "煮えすぎ";
             }
             if (shakeButton != null) shakeButton.interactable = o.stage == OrderStage.Drained;
             if (shakeLabel != null)

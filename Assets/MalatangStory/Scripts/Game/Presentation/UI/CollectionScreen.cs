@@ -211,7 +211,7 @@ namespace MalatangStory.Game
                     detail = FoodProfile.TextureName(traits.Texture) + "・" + FoodProfile.ColorName(traits.Color) + "・茹で" + item.cookingSeconds + "秒\n" + traits.Note
                         + "\n" + item.portionGrams.ToString("0") + "g " + item.Calories(item.portionGrams).ToString("0") + "kcal　使った " + used + "回"
                         + (item.isRare ? "　希少・品質+3" : "")
-                        + (Seasons.IsFeatured(S, item.id) ? "　<color=#2e7d5b>今週の旬</color>" : "");
+                        + (Seasons.IsFeatured(S, item.id) ? "　今週の旬" : "");
                 }
                 else detail = item.isRare ? "希少食材\n3日目以降の朝市で入手できます" : item.categoryLabel + "\n累計売上 " + item.unlockRevenueYuan.ToString("#,0") + "元で解禁";
                 if (readablePortrait && known)

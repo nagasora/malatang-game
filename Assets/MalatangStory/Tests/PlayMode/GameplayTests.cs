@@ -15,6 +15,46 @@ namespace MalatangStory.Tests
     /// <summary>実際の画面のボタン操作と店内の移動で、初日の営業から翌日までを通しで遊べることを保証する。</summary>
     public class GameplayTests
     {
+        [TestCase(1280, 720)]
+        [TestCase(720, 1280)]
+        [TestCase(1024, 768)]
+        public void SpeechStaysInTheSafeAreaAndAvoidsReservedPanels(int width, int height)
+        {
+            Rect area = new Rect(-width / 2f, -height / 2f, width, height);
+            Vector2 size = new Vector2(280, 70), pivot = new Vector2(.5f, 0);
+            var obstacles = new[] { new Rect(-width / 2f, height / 2f - 350, 460, 150), new Rect(width / 2f - 344, height / 2f - 312, 330, 112) };
+            Assert.IsTrue(OverlayLayout.TryPlace(area, size, pivot, new Vector2(-width, height), obstacles, out Vector2 placed));
+            Rect speech = new Rect(placed - Vector2.Scale(size, pivot), size);
+            Assert.IsTrue(area.Contains(speech.min)); Assert.IsTrue(area.Contains(speech.max));
+            foreach (var obstacle in obstacles) Assert.IsFalse(speech.Overlaps(obstacle));
+        }
+
+        [UnityTest]
+        public IEnumerator SeasonalParticlesAreRemovedInsideTheShopAndKeptOutside()
+        {
+            var root = new GameObject("Particle clipping regression");
+            try
+            {
+                var street = root.AddComponent<StreetLife>();
+                street.SetSeason("spring", "sunny", true);
+                ParticleSystem particles = root.GetComponentInChildren<ParticleSystem>();
+                particles.Stop(true, ParticleSystemStopBehavior.StopEmittingAndClear);
+                var samples = new[]
+                {
+                    new ParticleSystem.Particle { position = new Vector3(0, 5, 2), remainingLifetime = 10, startLifetime = 10, startSize = .1f },
+                    new ParticleSystem.Particle { position = new Vector3(10, 1, 2), remainingLifetime = 10, startLifetime = 10, startSize = .1f }
+                };
+                particles.SetParticles(samples, samples.Length);
+                yield return null;
+                int count = particles.GetParticles(samples);
+                for (int i = 0; i < count; i++)
+                    Assert.IsTrue(samples[i].remainingLifetime <= 0 || Mathf.Abs(samples[i].position.x) >= 7.1f);
+                Assert.IsTrue(samples.Take(count).Any(x => x.position.x > 9 && x.remainingLifetime > 0));
+            }
+            finally { UnityEngine.Object.Destroy(root); }
+            yield return null;
+        }
+
         private static Button FindButton(string name)
             => UnityEngine.Object.FindObjectsByType<Button>(FindObjectsSortMode.None).FirstOrDefault(x => x.gameObject.activeInHierarchy && x.name == name);
 

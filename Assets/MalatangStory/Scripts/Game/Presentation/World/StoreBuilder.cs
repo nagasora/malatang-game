@@ -78,6 +78,8 @@ namespace MalatangStory.Game
         public TextMesh RegisterDisplay { get; private set; }
         /// <summary>レジ横のキャッシュトレーです。</summary>
         public Transform CashTray { get; private set; }
+        private TextMesh storeNameLabel;
+        public void SetStoreName(string value) { if (storeNameLabel != null && storeNameLabel.text != value) storeNameLabel.text = value; }
         private CityBuilder city;
         private Transform seasonalEntrance;
         private Transform seasonalGroundEntrance;
@@ -143,7 +145,7 @@ namespace MalatangStory.Game
             go.transform.SetParent(parent ?? Root, false);
             go.transform.localPosition = position; go.transform.localRotation = rotation;
             var mesh = go.AddComponent<TextMesh>();
-            mesh.text = text; mesh.font = font; mesh.fontSize = 64; mesh.characterSize = size; mesh.anchor = TextAnchor.MiddleCenter; mesh.color = color;
+            mesh.richText = false; mesh.text = text; mesh.font = font; mesh.fontSize = 128; mesh.characterSize = size * .5f; mesh.anchor = TextAnchor.MiddleCenter; mesh.color = color;
             if (font != null) go.GetComponent<MeshRenderer>().sharedMaterial = font.material;
             return mesh;
         }
@@ -659,7 +661,8 @@ namespace MalatangStory.Game
                 Part("Stripe", StoreBuilder.RoundedBox(new Vector3(1.4f, .06f, 1.1f), .02f), theme.Get(i % 2 == 0 ? StoreTheme.Surface.Accent : StoreTheme.Surface.Ceiling), new Vector3(-5.6f + i * 1.4f, 0, 0), Vector3.one, awning, Quaternion.Euler(-18, 0, 0));
             ShopSign = new GameObject("Shop Sign").transform; ShopSign.SetParent(Root, false); ShopSign.localPosition = new Vector3(0, 3.65f, front - .2f);
             Part("Board", StoreBuilder.RoundedBox(new Vector3(5.4f, .6f, .1f), .05f), theme.Get(StoreTheme.Surface.Wood), Vector3.zero, Vector3.one, ShopSign);
-            Label(storeName, new Vector3(0, 0, -.07f), Quaternion.identity, .05f, new Color(1f, .85f, .45f), ShopSign).gameObject.name = "Store Name";
+            storeNameLabel = Label(storeName, new Vector3(0, 0, -.07f), Quaternion.identity, .05f, new Color(1f, .85f, .45f), ShopSign);
+            storeNameLabel.gameObject.name = "Store Name";
             CutawayWalls.Add((awning, Vector3.forward, 1));
             CutawayWalls.Add((ShopSign, Vector3.forward, 1));
             city = new CityBuilder(this, front);

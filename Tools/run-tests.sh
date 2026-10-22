@@ -1,24 +1,32 @@
 #!/bin/zsh
-# Unity のテストを実行し、結果の要約と失敗内容・実行時例外を表示する。
-# 使い方: Tools/run-tests.sh EditMode|PlayMode
+# 古いXMLを成功結果と誤認しないよう、今回の終了コードと新規結果を必ず確認する。
+set -eu
 ROOT="${0:A:h:h}"
 MODE=${1:-EditMode}
+[[ "$MODE" == EditMode || "$MODE" == PlayMode ]] || { echo 'Use EditMode or PlayMode' >&2; exit 2; }
 LOWER=${MODE:l}
 UNITY=/Applications/Unity/Hub/Editor/6000.3.24f1/Unity.app/Contents/MacOS/Unity
+mkdir -p "$ROOT/TestResults"
+RESULT="$ROOT/TestResults/$LOWER-$(date +%Y%m%d-%H%M%S)-$$.xml"
 EXTRA=()
 [[ $MODE == EditMode ]] && EXTRA=(-nographics)
-$UNITY -batchmode $EXTRA -projectPath "$ROOT" -runTests -testPlatform $MODE -testResults "$ROOT/TestResults/$LOWER.xml" -logFile /tmp/malatang-$LOWER.log
-echo "EXIT=$?"
-python3 - "$ROOT/TestResults/$LOWER.xml" <<'P'
+status_code=0
+$UNITY -batchmode $EXTRA -projectPath "$ROOT" -runTests -testPlatform "$MODE" -testResults "$RESULT" -logFile /tmp/malatang-$LOWER.log || status_code=$?
+echo "EXIT=$status_code"
+python3 - "$RESULT" "$status_code" <<'P'
 import sys, xml.etree.ElementTree as ET
-try: r = ET.parse(sys.argv[1]).getroot()
-except Exception as e: print("結果ファイルなし", e); sys.exit()
-print("total", r.attrib.get('total'), "passed", r.attrib.get('passed'), "failed", r.attrib.get('failed'))
+try:
+    r = ET.parse(sys.argv[1]).getroot()
+except (OSError, ET.ParseError) as e:
+    print('今回の結果ファイルなし:', e)
+    sys.exit(1)
+print('total', r.get('total'), 'passed', r.get('passed'), 'failed', r.get('failed'))
 for tc in r.iter('test-case'):
-    if tc.attrib.get('result') != 'Passed':
-        print("FAIL", tc.attrib['name'])
-        m = tc.find('.//message'); st = tc.find('.//stack-trace')
-        print((m.text or '')[:1500] if m is not None else '')
-        print((st.text or '')[:1200] if st is not None else '')
+    if tc.get('result') != 'Passed':
+        print(tc.get('result'), tc.get('name'))
+        print(tc.findtext('.//message', '')[:1500])
+        print(tc.findtext('.//stack-trace', '')[:1200])
+if int(sys.argv[2]) or r.get('result') != 'Passed' or int(r.get('passed', '0')) == 0:
+    sys.exit(1)
 P
-grep -E "^[A-Za-z.]*Exception" /tmp/malatang-$LOWER.log | sort | uniq -c | sort -rn | head -10
+cp "$RESULT" "$ROOT/TestResults/$LOWER.xml"

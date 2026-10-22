@@ -79,3 +79,9 @@
 
 ### 検証
 - `Tools/run-tests.sh EditMode|PlayMode`、`Tools/smoke.sh`（Mac で16画面を撮影）、iOS はシミュレーター向け書き出し（`ProjectBuilder.BuildIOSSimulator`）と環境変数 `MALATANG_SMOKE_OUTPUT=persistent` で同じ自動プレイを実行できる。
+
+### 保存の信頼境界
+
+SHA-256は破損検知用であり、改ざん防止ではない。オンライン順位などを追加する際はサーバー側で結果を検証する。クライアント内の鍵によるHMACだけでは不正を防げない。読み込みは8 MiBまでとし、非致命的例外はバックアップ復旧へ進む。復旧できない保存は退避し、退避に失敗した場合は上書きしない。
+
+iOSの保存先は persistentDataPath（Documents）。iCloudバックアップは利用できるが、Finder経由の保存書き換えを公開する UIFileSharingEnabled は有効にしない。

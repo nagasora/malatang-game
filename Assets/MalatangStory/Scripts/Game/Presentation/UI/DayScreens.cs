@@ -30,7 +30,7 @@ namespace MalatangStory.Game
             UIKit.Place(wIcon.rectTransform, new Vector2(0, 1), new Vector2(0, 0), new Vector2(64, 64));
             var season = Seasons.Of(S.day);
             string featured = string.IsNullOrEmpty(S.featuredIngredient) ? "" : "　旬：" + App.Catalog.Get(S.featuredIngredient).displayName + "（仕入れ25%引き・よく頼まれる）";
-            var wText = UIKit.Label(body, "天気：" + weather.Name + "　" + WeatherNote(weather) + "\n<size=16>" + season.Name + "（" + Seasons.DayOfSeason(S.day) + "日目）" + featured + "</size>", 19, UIKit.Ink, TextAnchor.MiddleLeft, true);
+            var wText = UIKit.Label(body, "天気：" + weather.Name + "　" + WeatherNote(weather) + "\n" + season.Name + "（" + Seasons.DayOfSeason(S.day) + "日目）" + featured + "", 19, UIKit.Ink, TextAnchor.MiddleLeft, true);
             UIKit.Place(wText.rectTransform, new Vector2(0, 1), new Vector2(76, -4), new Vector2(630, 56));
             var eventPanel = UIKit.Panel(body, dailyEvent.Id == "none" ? UIKit.PaperDark : new Color(1, .9f, .7f), 14, false, "Event");
             UIKit.Place(eventPanel.rectTransform, new Vector2(0, 1), new Vector2(0, -76), new Vector2(716, 92));
@@ -115,7 +115,7 @@ namespace MalatangStory.Game
                 "固定費　　 -" + RestaurantSimulation.Money(r.fixedCostFen),
                 "人件費　　 -" + RestaurantSimulation.Money(r.wagesFen),
                 "おつり過払い -" + RestaurantSimulation.Money(r.changeLossFen),
-                "<b>営業利益　　" + RestaurantSimulation.Money(r.ProfitFen) + "</b>",
+                "営業利益　　" + RestaurantSimulation.Money(r.ProfitFen) + "",
                 "",
                 "仕入れ支出　" + RestaurantSimulation.Money(r.purchasesFen) + "　設備・内装 " + RestaurantSimulation.Money(r.investmentFen),
                 "提供 " + r.served + "杯　取消 " + r.lost + "件　平均品質 " + r.AverageQuality.ToString("0") + "点　会心 " + r.perfect + "杯",

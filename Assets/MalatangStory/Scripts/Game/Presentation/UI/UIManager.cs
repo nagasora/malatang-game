@@ -65,6 +65,9 @@ namespace MalatangStory.Game
         private HudView hud;
         private readonly List<(RectTransform rt, float age, float life)> toasts = new List<(RectTransform, float, float)>();
         private readonly List<(RectTransform rt, Vector3 world, float age, float life)> popups = new List<(RectTransform, Vector3, float, float)>();
+        private readonly Queue<(string message, IconKind icon, Color? accent, float seconds)> pendingToasts = new Queue<(string, IconKind, Color?, float)>();
+        private readonly Vector3[] overlayCorners = new Vector3[4];
+        private readonly List<Rect> overlayObstacles = new List<Rect>(16);
         private readonly List<SpeechBubble> speeches = new List<SpeechBubble>();
 
         /// <summary>3D の人物の頭上に追従する吹き出し。</summary>
@@ -172,11 +175,14 @@ namespace MalatangStory.Game
                 var label = toasts[i].rt != null ? toasts[i].rt.GetComponentInChildren<Text>() : null;
                 if (label != null && label.text == message) { toasts[i] = (toasts[i].rt, 0, Mathf.Max(toasts[i].life, seconds)); return; }
             }
-            // 大きなカードの画面では下の余白に1件しか収まらず、重ねるとカードのボタン列を覆うため、最新の1件だけ残す。
-            int keep = ToastAtBottom ? 1 : 3;
-            while (toasts.Count >= keep) { Destroy(toasts[0].rt.gameObject); toasts.RemoveAt(0); }
+            foreach (var pending in pendingToasts) if (pending.message == message) return;
+            if (toasts.Count >= (ToastAtBottom ? 1 : 2))
+            {
+                pendingToasts.Enqueue((message, icon, accent, seconds));
+                return;
+            }
             var panel = UIKit.Panel(toastLayer, new Color(.16f, .11f, .09f, .92f), 18, true, "Toast");
-            var rt = UIKit.Place(panel.rectTransform, new Vector2(.5f, 1), new Vector2(0, ToastAtBottom ? -(safe.rect.height - 60) : -260), new Vector2(580, 52));
+            var rt = UIKit.Place(panel.rectTransform, new Vector2(.5f, 1), new Vector2(0, ToastAtBottom ? -(safe.rect.height - 60) : -260), new Vector2(Mathf.Min(520, safe.rect.width - 32), 52));
             var iconImage = UIKit.Icon(rt, icon, accent ?? UIKit.Gold);
             UIKit.Place(iconImage.rectTransform, new Vector2(0, .5f), new Vector2(14, 0), new Vector2(30, 30));
             var text = UIKit.Label(rt, message, 19, UIKit.Paper, TextAnchor.MiddleLeft);
@@ -226,6 +232,7 @@ namespace MalatangStory.Game
         {
             foreach (var t in toasts) if (t.rt != null) Destroy(t.rt.gameObject);
             toasts.Clear();
+            pendingToasts.Clear();
         }
 
         /// <summary>3D 空間の位置に、浮かび上がって消える文字を出す（売上・品質など）。</summary>
@@ -275,7 +282,18 @@ namespace MalatangStory.Game
             rt.gameObject.SetActive(screen.z > 0);
             RectTransformUtility.ScreenPointToLocalPointInRectangle(popupLayer, screen, null, out var local);
             rt.anchorMin = rt.anchorMax = new Vector2(.5f, .5f);
-            rt.anchoredPosition = local;
+            rt.anchoredPosition = OverlayLayout.Clamp(popupLayer.rect, rt.sizeDelta, rt.pivot, local);
+        }
+
+        private bool ViewVisible(Vector3 point) => app.World.View.WorldToViewportPoint(point).z > 0;
+
+        private void AddObstacle(RectTransform rt)
+        {
+            if (rt == null || !rt.gameObject.activeInHierarchy) return;
+            rt.GetWorldCorners(overlayCorners);
+            Vector2 low = popupLayer.InverseTransformPoint(overlayCorners[0]);
+            Vector2 high = popupLayer.InverseTransformPoint(overlayCorners[2]);
+            overlayObstacles.Add(Rect.MinMaxRect(low.x - 8, low.y - 8, high.x + 8, high.y + 8));
         }
 
         private void Update()
@@ -285,8 +303,7 @@ namespace MalatangStory.Game
             // 大きなカードの画面では、店内の吹き出し・浮かぶ文字がカードの上に重なって読みにくいため隠す。
             bool modal = ToastAtBottom;
             if (popupLayer.gameObject.activeSelf == modal) popupLayer.gameObject.SetActive(!modal);
-            if (modal)
-                while (toasts.Count > 1) { if (toasts[0].rt != null) Destroy(toasts[0].rt.gameObject); toasts.RemoveAt(0); }
+
             for (int i = toasts.Count - 1; i >= 0; i--)
             {
                 var t = toasts[i];
@@ -294,12 +311,18 @@ namespace MalatangStory.Game
                 if (t.rt == null || t.age > t.life) { if (t.rt != null) Destroy(t.rt.gameObject); toasts.RemoveAt(i); continue; }
                 toasts[i] = t;
             }
+            if (pendingToasts.Count > 0 && toasts.Count < (ToastAtBottom ? 1 : 2))
+            {
+                var pending = pendingToasts.Dequeue();
+                Toast(pending.message, pending.icon, pending.accent, pending.seconds);
+            }
             for (int i = 0; i < toasts.Count; i++)
             {
                 var t = toasts[i];
-                float targetY = ToastAtBottom ? -(safe.rect.height - 60) + (toasts.Count - 1 - i) * 56 : -206 - (toasts.Count - 1 - i) * 58;
+                float targetY = ToastAtBottom ? -(safe.rect.height - 60) : -(safe.rect.height - 236 - i * 58);
                 var pos = t.rt.anchoredPosition;
-                pos.y = Mathf.Lerp(pos.y, targetY, dt * 12);
+                pos.y = targetY;
+                t.rt.sizeDelta = new Vector2(Mathf.Min(520, safe.rect.width - 32), 52);
                 t.rt.anchoredPosition = pos;
                 float fade = Mathf.Clamp01((t.life - t.age) / .35f);
                 var group = t.rt.GetComponent<CanvasGroup>();
@@ -316,6 +339,11 @@ namespace MalatangStory.Game
                 p.rt.localScale = Vector3.one * (p.age < .15f ? Mathf.Lerp(.6f, 1.15f, p.age / .15f) : Mathf.Lerp(1.15f, 1f, Mathf.Clamp01((p.age - .15f) / .2f)));
                 popups[i] = p;
             }
+            overlayObstacles.Clear();
+            AddObstacle(current?.Root?.Find("Tutorial") as RectTransform);
+            AddObstacle(current?.Root?.Find("Missions") as RectTransform);
+            AddObstacle(current?.Root?.Find("Next Action") as RectTransform);
+            foreach (var t in toasts) AddObstacle(t.rt);
             for (int i = speeches.Count - 1; i >= 0; i--)
             {
                 var b = speeches[i];
@@ -323,6 +351,11 @@ namespace MalatangStory.Game
                 Vector3? anchor = b.Rect != null ? b.Anchor() : null;
                 if (b.Rect == null || b.Age > b.Life || !anchor.HasValue) { if (b.Rect != null) Destroy(b.Rect.gameObject); speeches.RemoveAt(i); continue; }
                 PositionPopup(b.Rect, anchor.Value, 0);
+                Vector2 placed;
+                bool fits = OverlayLayout.TryPlace(popupLayer.rect, b.Rect.sizeDelta, b.Rect.pivot, b.Rect.anchoredPosition, overlayObstacles, out placed);
+                b.Rect.gameObject.SetActive(fits && ViewVisible(anchor.Value));
+                b.Rect.anchoredPosition = placed;
+                if (fits) AddObstacle(b.Rect);
             }
             if (app == null || app.Simulation == null) return;
             hud?.Tick(dt);

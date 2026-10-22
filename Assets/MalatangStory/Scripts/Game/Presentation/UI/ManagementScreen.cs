@@ -104,7 +104,7 @@ namespace MalatangStory.Game
             UIKit.Place(minus.GetComponent<RectTransform>(), new Vector2(0, 1), new Vector2(0, -42), new Vector2(100, 46));
             var plus = UIKit.Button(right, "+1元", () => Sim.ChangePrice(100), ButtonStyle.Secondary, 18, null, Sim.CanManage);
             UIKit.Place(plus.GetComponent<RectTransform>(), new Vector2(1, 1), new Vector2(0, -42), new Vector2(100, 46));
-            var note = UIKit.Label(right, "1杯（約250g）でおよそ " + RestaurantSimulation.Money(S.pricePer100gFen * 25 / 10) + "。\n値上げすると来客が減り、値下げすると増えます。" + (Sim.CanManage ? "" : "\n<color=#b02a1e>価格は営業前か閉店後に変更できます。</color>"), 15, UIKit.InkSoft, TextAnchor.UpperLeft);
+            var note = UIKit.Label(right, "1杯（約250g）でおよそ " + RestaurantSimulation.Money(S.pricePer100gFen * 25 / 10) + "。\n値上げすると来客が減り、値下げすると増えます。" + (Sim.CanManage ? "" : "\n価格は営業前か閉店後に変更できます。"), 15, UIKit.InkSoft, TextAnchor.UpperLeft);
             UIKit.Place(note.rectTransform, new Vector2(0, 1), new Vector2(0, -96), new Vector2(480, 70));
 
             var nameTitle = UIKit.Label(right, "店名", 20, UIKit.Lacquer, TextAnchor.MiddleLeft, true);
@@ -127,7 +127,8 @@ namespace MalatangStory.Game
             var text = UIKit.Label(bg.transform, "", 19, UIKit.Ink, TextAnchor.MiddleLeft);
             UIKit.Fill(text.rectTransform, 12, 12, 4, 4);
             text.supportRichText = false; text.resizeTextForBestFit = false; text.raycastTarget = false;
-            field.textComponent = text; field.characterLimit = 16; field.text = value;
+            field.textComponent = text; field.characterLimit = 256; field.text = value;
+            field.onEndEdit.AddListener(v => field.SetTextWithoutNotify(PlayerText.Clean(v)));
             return field;
         }
 
@@ -154,7 +155,7 @@ namespace MalatangStory.Game
             {
                 var row = Row(list, 84);
                 int level = S.EquipmentLevel(def.Id);
-                var title = UIKit.Label(row, def.Name + "　<size=16>Lv." + level + " / " + def.MaxLevel + "</size>", 21, UIKit.Ink, TextAnchor.MiddleLeft, true);
+                var title = UIKit.Label(row, def.Name + "　Lv." + level + " / " + def.MaxLevel + "", 21, UIKit.Ink, TextAnchor.MiddleLeft, true);
                 UIKit.Place(title.rectTransform, new Vector2(0, 1), new Vector2(18, -8), new Vector2(560, 34));
                 var desc = UIKit.Label(row, def.Description, 15, UIKit.InkSoft, TextAnchor.MiddleLeft);
                 UIKit.Place(desc.rectTransform, new Vector2(0, 0), new Vector2(18, 8), new Vector2(620, 30));
@@ -180,7 +181,7 @@ namespace MalatangStory.Game
                 var row = Row(list, 84);
                 int rank = Skills.Rank(S, def.Id);
                 string pips = new string('●', rank) + new string('○', def.MaxRank - rank);
-                var title = UIKit.Label(row, def.Name + "　<size=18>" + pips + "</size>　<size=15>" + def.PerRank + "／段階</size>", 21, UIKit.Ink, TextAnchor.MiddleLeft, true);
+                var title = UIKit.Label(row, def.Name + "　" + pips + "　" + def.PerRank + "／段階", 21, UIKit.Ink, TextAnchor.MiddleLeft, true);
                 UIKit.Place(title.rectTransform, new Vector2(0, 1), new Vector2(18, -8), new Vector2(620, 34));
                 var desc = UIKit.Label(row, def.Description, 15, UIKit.InkSoft, TextAnchor.MiddleLeft);
                 UIKit.Place(desc.rectTransform, new Vector2(0, 0), new Vector2(18, 8), new Vector2(620, 30));
@@ -200,7 +201,7 @@ namespace MalatangStory.Game
             {
                 var member = S.staff.FirstOrDefault(x => x.role == def.Role);
                 var row = Row(list, 110, member != null ? new Color(.93f, .98f, .92f) : Color.white);
-                var title = UIKit.Label(row, def.Title + (member != null ? "　<size=16>" + member.name + "さん・研修Lv." + member.trainingLevel + "</size>" : ""), 21, UIKit.Ink, TextAnchor.MiddleLeft, true);
+                var title = UIKit.Label(row, def.Title + (member != null ? "　" + member.name + "さん・研修Lv." + member.trainingLevel + "" : ""), 21, UIKit.Ink, TextAnchor.MiddleLeft, true);
                 UIKit.Place(title.rectTransform, new Vector2(0, 1), new Vector2(18, -8), new Vector2(600, 34));
                 var desc = UIKit.Label(row, def.Description + "\n日給 " + RestaurantSimulation.Money(def.DailyWageFen) + "　採用費 " + RestaurantSimulation.Money(def.HireFeeFen)
                     + "　1作業 約" + (member != null ? StaffSystem.TaskSeconds(member) : def.BaseTaskSeconds).ToString("0") + "秒", 15, UIKit.InkSoft, TextAnchor.UpperLeft);
@@ -251,7 +252,7 @@ namespace MalatangStory.Game
             foreach (var regular in S.regulars.OrderByDescending(x => x.affinity))
             {
                 var row = Row(list, 96);
-                var title = UIKit.Label(row, regular.name + "さん　<size=15>" + Content.Archetype(regular.archetype).Label + "・来店" + regular.visits + "回</size>", 20, UIKit.Ink, TextAnchor.MiddleLeft, true);
+                var title = UIKit.Label(row, regular.name + "さん　" + Content.Archetype(regular.archetype).Label + "・来店" + regular.visits + "回", 20, UIKit.Ink, TextAnchor.MiddleLeft, true);
                 UIKit.Place(title.rectTransform, new Vector2(0, 1), new Vector2(18, -6), new Vector2(520, 32));
                 var heart = UIKit.Icon(row, IconKind.Heart, UIKit.Lacquer);
                 UIKit.Place(heart.rectTransform, new Vector2(1, 1), new Vector2(-250, -10), new Vector2(24, 24));

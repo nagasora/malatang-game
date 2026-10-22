@@ -81,7 +81,7 @@ namespace MalatangStory.Game
             var rt = Rect(name, parent);
             var label = rt.gameObject.AddComponent<Text>();
             label.font = Font; label.text = text; label.fontSize = size; label.color = color ?? Ink;
-            label.alignment = align; label.raycastTarget = false; label.supportRichText = true;
+            label.alignment = align; label.raycastTarget = false; label.supportRichText = false;
             label.fontStyle = bold ? FontStyle.Bold : FontStyle.Normal;
             label.horizontalOverflow = HorizontalWrapMode.Wrap; label.verticalOverflow = VerticalWrapMode.Truncate;
             label.resizeTextForBestFit = true; label.resizeTextMinSize = Mathf.Max(10, size - 8); label.resizeTextMaxSize = size;

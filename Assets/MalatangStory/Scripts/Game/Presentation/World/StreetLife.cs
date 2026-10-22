@@ -194,7 +194,7 @@ namespace MalatangStory.Game
             }
         }
 
-        /// <summary>切り欠きで屋根を非表示にしても、店舗の屋根より下では雪や花びらを描かず室内への降り込みを防ぎます。</summary>
+        /// <summary>屋根の切り欠き越しに高い粒子が床へ重なって見えるため、店舗の上空も含めて除去します。</summary>
         private void ClipIndoorSeasonalParticles()
         {
             if (seasonalParticles == null || seasonalBuffer == null) return;
@@ -203,7 +203,7 @@ namespace MalatangStory.Game
             for (int i = 0; i < count; i++)
             {
                 Vector3 local = transform.InverseTransformPoint(seasonalBuffer[i].position);
-                if (Mathf.Abs(local.x) >= 7.1f || local.z <= streetFront || local.z >= 6f || local.y >= 3.2f) continue;
+                if (Mathf.Abs(local.x) >= 7.1f || local.z <= streetFront || local.z >= 6f) continue;
                 seasonalBuffer[i].remainingLifetime = 0;
                 clipped = true;
             }

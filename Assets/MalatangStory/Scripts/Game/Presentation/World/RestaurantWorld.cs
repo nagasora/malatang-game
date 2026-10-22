@@ -615,6 +615,7 @@ namespace MalatangStory.Game
 
         private void Update()
         {
+            store?.SetStoreName(App.Simulation.State.storeName);
             if (App == null || App.Simulation == null || View == null) return;
             var sim = App.Simulation;
             bool paused = !App.Started || App.Paused || (App.UI.Current != null && App.UI.Current.PausesGame);

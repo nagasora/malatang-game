@@ -16,3 +16,17 @@ kill $PID 2>/dev/null; wait $PID 2>/dev/null
 cat "$OUT/smoke-result.json" 2>/dev/null; echo
 cat "$OUT/smoke-failure.txt" 2>/dev/null | head -20
 grep -E "^[A-Za-z.]*Exception" /tmp/malatang-player.log | sort | uniq -c | sort -rn | head
+
+python3 - "$OUT" <<'P'
+import json, pathlib, sys
+out = pathlib.Path(sys.argv[1])
+if (out / 'smoke-failure.txt').exists():
+    raise SystemExit('SMOKE_FAILED: ' + (out / 'smoke-failure.txt').read_text()[:1000])
+try:
+    result = json.loads((out / 'smoke-result.json').read_text())
+except (OSError, ValueError) as error:
+    raise SystemExit('SMOKE_FAILED: ' + str(error))
+if result.get('result') != 'passed' or result.get('reachedDay', 0) < 5:
+    raise SystemExit('SMOKE_FAILED: ' + str(result))
+print('SMOKE_OK')
+P

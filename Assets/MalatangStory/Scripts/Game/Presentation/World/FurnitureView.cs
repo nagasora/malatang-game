@@ -279,7 +279,7 @@ namespace MalatangStory.Game
             go.transform.localPosition = new Vector3(0, y, .04f);
             go.transform.localRotation = Quaternion.Euler(0, 180, 0);
             var mesh = go.AddComponent<TextMesh>();
-            mesh.text = text; mesh.font = font; mesh.fontSize = 64; mesh.characterSize = size; mesh.anchor = TextAnchor.MiddleCenter; mesh.color = color ?? StoreBuilder.Lacquer;
+            mesh.richText = false; mesh.text = text; mesh.font = font; mesh.fontSize = 64; mesh.characterSize = size; mesh.anchor = TextAnchor.MiddleCenter; mesh.color = color ?? StoreBuilder.Lacquer;
             if (font != null) go.GetComponent<MeshRenderer>().sharedMaterial = font.material;
         }
 

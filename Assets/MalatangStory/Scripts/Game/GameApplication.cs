@@ -47,7 +47,12 @@ namespace MalatangStory.Game
             smokeOutput = Environment.GetEnvironmentVariable("MALATANG_SMOKE_OUTPUT");
             if (smokeIndex >= 0 && smokeIndex + 1 < args.Length) smokeOutput = args[smokeIndex + 1];
             // iOS シミュレーターでは書き込める場所がアプリ内に限られるため、"persistent" はアプリの保存領域を指す。
-            if (smokeOutput == "persistent") smokeOutput = Path.Combine(Application.persistentDataPath, "smoke");
+            if (smokeOutput == "persistent")
+            {
+                smokeOutput = Path.Combine(Application.persistentDataPath, "smoke");
+                Directory.CreateDirectory(smokeOutput);
+            }
+            if (!SmokeOutputPath.TryResolve(smokeOutput, out smokeOutput)) smokeOutput = null;
             if (!string.IsNullOrEmpty(smokeOutput)) { SavePathOverride = Path.Combine(smokeOutput, "smoke-save.json"); Application.runInBackground = true; }
 #endif
             font = Resources.Load<Font>("Fonts/NotoSansJP") ?? Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
@@ -62,8 +67,10 @@ namespace MalatangStory.Game
             UI = gameObject.AddComponent<UIManager>();
             UI.Initialize(this, font);
             SoupVisuals.PrewarmReport soupWarmup = SoupVisuals.PrewarmAll();
+#if UNITY_EDITOR || DEVELOPMENT_BUILD
             Debug.Log($"[SoupPrewarm] elapsedMs={soupWarmup.ElapsedMilliseconds:F2} textureBytes={soupWarmup.TextureBytes} "
                 + $"meshBytes={soupWarmup.SeasoningMeshBytes} totalBytes={soupWarmup.TotalResourceBytes} nativeBytes={soupWarmup.NativeMemoryBytes}");
+#endif
             ResetSimulation(null);
             StartCoroutine(Icons.RenderAll(Catalog.ingredients, 3));
             Open(GameScreen.Title);
