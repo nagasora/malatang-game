@@ -97,70 +97,69 @@ namespace MalatangStory.Tests
         public void MalaPixelsContainNumerousFineDropsWithDarkCentersAndBrightRims(int spice)
         {
             Color[] pixels = SoupVisuals.GenerateSurfacePixels("mala", spice);
-            List<Vector3> drops = MalaDropLayout(spice);
+            List<OilDroplet> drops = MalaDropLayout(spice);
             int visibleFineDrops = 0;
             for (int index = 0; index < drops.Count; index++)
             {
-                Vector3 drop = drops[index];
-                if (drop.z < .016f || drop.z > .03f || !IsIsolatedDrop(drops, index)) continue;
-                if (drop.x * drop.x + drop.y * drop.y > .75f * .75f) continue;
-                if (Mathf.Abs(drop.x + drop.y * .48f + .26f) < drop.z * 1.5f + .05f) continue;
+                OilDroplet drop = drops[index];
+                if (drop.Radius < .025f || drop.Radius > .065f || !IsIsolatedDrop(drops, index)) continue;
+                if (drop.X * drop.X + drop.Z * drop.Z > .93f * .93f) continue;
                 Color center = DropRegionAverage(pixels, drop, 0f, .18f);
                 Color rim = DropRegionAverage(pixels, drop, .55f, .88f);
                 float centerValue = Luminance(center), rimValue = Luminance(rim);
                 if (center.r - center.g > .2f && rimValue - centerValue > .1f && rim.g - center.g > .1f)
                     visibleFineDrops++;
             }
-            Assert.GreaterOrEqual(visibleFineDrops, 12,
-                "直径4〜8画素程度の独立した油玉を12粒以上、中心より輝度・緑成分が0.1超明るい輪で確認する");
+            Assert.GreaterOrEqual(visibleFineDrops, 5,
+                "大小が混在する独立した楕円の油玉を5粒以上、中心より輝度・緑成分が0.1超明るい輪で確認する");
         }
 
         /// <summary>ゲーム乱数を変更せず、実画素を調べる対象油玉の中心と半径を再現します。</summary>
-        private static List<Vector3> MalaDropLayout(int spice)
+        private static List<OilDroplet> MalaDropLayout(int spice)
         {
             System.Random random = new System.Random(CustomerDirector.StableHash("mala"));
-            List<Vector3> drops = new List<Vector3>();
+            List<OilDroplet> drops = new List<OilDroplet>();
             int count = SoupAppearance.ForSoup("mala", spice).OilDrops;
+            OilDroplet previous = default;
             for (int index = 0; index < count; index++)
             {
-                GarnishPlacement placement = SoupAppearance.Scatter(random, .84f);
-                float variation = (float)random.NextDouble();
-                float radius = (index % 9 == 0 ? .035f + variation * .014f : .009f + variation * .017f)
-                    * (1f + spice * .025f);
-                drops.Add(new Vector3(placement.X, placement.Z, radius));
+                previous = OilDropletRules.Next(random, true, spice, previous, index > 0);
+                drops.Add(previous);
             }
             return drops;
         }
 
         /// <summary>後から描かれる粒による上書きを含め、油玉同士の輪が重ならない対象だけを選びます。</summary>
-        private static bool IsIsolatedDrop(List<Vector3> drops, int index)
+        private static bool IsIsolatedDrop(List<OilDroplet> drops, int index)
         {
-            Vector3 target = drops[index];
+            OilDroplet target = drops[index];
             for (int other = 0; other < drops.Count; other++)
             {
                 if (other == index) continue;
-                float dx = target.x - drops[other].x, dz = target.y - drops[other].y;
-                float separation = (target.z + drops[other].z) * 1.05f;
+                float dx = target.X - drops[other].X, dz = target.Z - drops[other].Z;
+                float separation = (target.Radius * Mathf.Max(target.Aspect, 1 / target.Aspect) + drops[other].Radius * Mathf.Max(drops[other].Aspect, 1 / drops[other].Aspect)) * 1.05f;
                 if (dx * dx + dz * dz < separation * separation) return false;
             }
             return true;
         }
 
         /// <summary>実画素の中心領域または環状領域を平均し、画素丸めに依存しない濃淡を取得します。</summary>
-        private static Color DropRegionAverage(Color[] pixels, Vector3 drop, float lowerSquaredRadius, float upperSquaredRadius)
+        private static Color DropRegionAverage(Color[] pixels, OilDroplet drop, float lowerSquaredRadius, float upperSquaredRadius)
         {
-            int left = Mathf.Max(0, Mathf.FloorToInt((drop.x - drop.z + 1f) * .5f * 255f));
-            int right = Mathf.Min(255, Mathf.CeilToInt((drop.x + drop.z + 1f) * .5f * 255f));
-            int bottom = Mathf.Max(0, Mathf.FloorToInt((drop.y - drop.z + 1f) * .5f * 255f));
-            int top = Mathf.Min(255, Mathf.CeilToInt((drop.y + drop.z + 1f) * .5f * 255f));
+            int left = Mathf.Max(0, Mathf.FloorToInt((drop.X - drop.Radius * 1.6f + 1f) * .5f * 255f));
+            int right = Mathf.Min(255, Mathf.CeilToInt((drop.X + drop.Radius * 1.6f + 1f) * .5f * 255f));
+            int bottom = Mathf.Max(0, Mathf.FloorToInt((drop.Z - drop.Radius * 1.6f + 1f) * .5f * 255f));
+            int top = Mathf.Min(255, Mathf.CeilToInt((drop.Z + drop.Radius * 1.6f + 1f) * .5f * 255f));
             Color sum = Color.clear;
             int count = 0;
             for (int y = bottom; y <= top; y++)
                 for (int x = left; x <= right; x++)
                 {
-                    float dx = (x / 255f * 2f - 1f - drop.x) / drop.z;
-                    float dz = (y / 255f * 2f - 1f - drop.y) / drop.z;
-                    float squaredRadius = dx * dx + dz * dz;
+                    float dx = (x / 255f * 2f - 1f - drop.X) / drop.Radius;
+                    float dz = (y / 255f * 2f - 1f - drop.Z) / drop.Radius;
+                    float ex = (dx * Mathf.Cos(drop.Angle) + dz * Mathf.Sin(drop.Angle)) / drop.Aspect;
+                    float ez = (-dx * Mathf.Sin(drop.Angle) + dz * Mathf.Cos(drop.Angle)) * drop.Aspect;
+                    float squaredRadius = ex * ex + ez * ez;
                     if (squaredRadius < lowerSquaredRadius || squaredRadius > upperSquaredRadius) continue;
                     sum += pixels[y * 256 + x];
                     count++;

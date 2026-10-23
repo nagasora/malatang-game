@@ -105,28 +105,36 @@ namespace MalatangStory.Game
         {
             get
             {
+                if (!string.IsNullOrEmpty(State.challengeMode)) return 48;
                 float seats = DiningLayout.SeatCount(State);
                 float baseDemand = 9 + (State.reputation - 50) / 5f + State.popularity / 10f + seats * .7f + State.shopLevel * .7f
                     + Math.Max(0, DiningLayout.Ambience(State)) * .12f - (State.pricePer100gFen - 1800) / 140f;
-                float multiplier = Content.Weather(State.weather).DemandMultiplier * Content.DailyEvent(State.dailyEvent).DemandMultiplier;
+                float rivalry = State.day >= 7 ? Math.Max(.9f, Math.Min(1.1f, 1 + (State.reputation - State.rivalReputation) * .002f)) : 1;
+                float multiplier = rivalry * Content.Weather(State.weather).DemandMultiplier * Content.DailyEvent(State.dailyEvent).DemandMultiplier;
                 return (int)Math.Max(5, Math.Min(48, Math.Round(baseDemand * multiplier * Skills.Demand(State))));
             }
         }
 
         /// <summary>仕入れ価格の倍率（セール日は割引）。</summary>
-        public float PurchaseMultiplier => Content.DailyEvent(State.dailyEvent).PurchaseMultiplier * Skills.Purchase(State);
+        public float PurchaseMultiplier => WholesaleMarket.Multiplier(State.day, State.weather, Seasons.Of(State.day).Id) * Content.DailyEvent(State.dailyEvent).PurchaseMultiplier * Skills.Purchase(State);
 
         public long MinimumPurchaseFen => Unlocks.Available.OrderBy(x => x.purchasePricePerPortion).Take(4).Sum(x => PurchaseCost(x) * 5);
         public static long Cost(IngredientDefinition item) => (long)Math.Round(item.purchasePricePerPortion * 100, MidpointRounding.AwayFromZero);
         public long PurchaseCost(IngredientDefinition item)
             => (long)Math.Round(Cost(item) * (item.isRare ? 1f : PurchaseMultiplier * (Seasons.IsFeatured(State, item.id) ? Seasons.FeaturedPurchase : 1f)), MidpointRounding.AwayFromZero);
-        public static string Money(long fen) => (fen / 100m).ToString("#,0.00") + " 元";
+        public static string Money(long fen)
+        {
+            decimal yuan = fen / 100m;
+            return Math.Abs(yuan) >= 10000 ? (yuan / 10000m).ToString("0.##", System.Globalization.CultureInfo.InvariantCulture) + "万元"
+                : yuan.ToString("#,0.##", System.Globalization.CultureInfo.InvariantCulture) + "元";
+        }
+        public static string MoneyOrDash(long fen) => fen == 0 ? "—" : Money(fen);
 
         /// <summary>1日の固定費（家賃・光熱費・鍋の維持費・拡張分の家賃）。</summary>
         public long FixedCostFen => 15000 + 3000 + (State.pots - 1) * 1000L + (State.EquipmentLevel("expansion") - 1) * 5000L;
 
         /// <summary>鍋の数の上限（設備レベル）。</summary>
-        public float CookSpeedMultiplier => (State.EquipmentLevel("stove") >= 2 ? 1.25f : 1f) * Skills.CookSpeed(State);
+        public float CookSpeedMultiplier => (State.EquipmentLevel("stove") >= 2 ? 1.25f : 1f) * Skills.CookSpeed(State) * (State.festivalStall ? 1.5f : 1);
 
         /// <summary>鮮度の日数への加算（冷蔵庫）。</summary>
         public int FreshnessBonusDays => State.EquipmentLevel("fridge") >= 2 ? 1 : 0;
@@ -194,6 +202,7 @@ namespace MalatangStory.Game
         {
             if (State.phase != DayPhase.Preparation) return false;
             if (!Unlocks.NormalAvailable.Any(x => StockFor(x.id).quantity > 0)) return Fail("通常食材の在庫がありません。通常食材の仕入れ、または再建支援を利用してください。");
+            if (State.tutorialComplete && !State.preparation.completed) FinishPreparation(true);
             State.phase = DayPhase.Open;
             State.spawnSeconds = State.tutorialComplete ? 4 : 0;
             State.eventTriggered = false;
@@ -211,7 +220,12 @@ namespace MalatangStory.Game
             bool tutorial = !State.tutorialComplete;
             if (!tutorial)
             {
-                State.daySeconds = Math.Min(DayDuration, State.daySeconds + seconds);
+                float clockSeconds = seconds * (State.challengeMode == ChallengeRules.Rush ? 4 : State.challengeMode == ChallengeRules.Weekly ? 2.4f : 1);
+                int previousWarnings = State.rushWarnings;
+                State.rushWarnings |= BusinessRhythm.WarningMask(State.daySeconds + clockSeconds);
+                if (previousWarnings != State.rushWarnings)
+                    Notify((State.rushWarnings & 2) != 0 ? "まもなく夕方のラッシュ！19:30までチップ・コンボ報酬25%アップ。" : "まもなくランチラッシュ！12:00〜13:00はチップ・コンボ報酬25%アップ。");
+                State.daySeconds = Math.Min(DayDuration, State.daySeconds + clockSeconds);
                 if (State.daySeconds >= DayDuration && State.phase == DayPhase.Open) BeginClosing();
                 if (State.phase == DayPhase.Open) SpawnCustomers(seconds);
                 TriggerScheduledEvent();
@@ -242,12 +256,10 @@ namespace MalatangStory.Game
                 if (order != null)
                 {
                     AddOrder(order);
-                    if (Content.Archetype(order.archetype).Pair && string.IsNullOrEmpty(order.groupId)) AddPartner(order);
+                    if (!State.festivalStall && Content.Archetype(order.archetype).Pair && string.IsNullOrEmpty(order.groupId)) AddPartner(order);
                 }
             }
-            float fraction = State.daySeconds / DayDuration;
-            float rush = fraction < .11f ? .6f : fraction < .28f ? 1.8f : fraction < .72f ? .6f : fraction < .94f ? 1.6f : .5f;
-            State.spawnSeconds = DayDuration / Math.Max(1, Demand) / rush;
+            State.spawnSeconds = string.IsNullOrEmpty(State.challengeMode) ? DayDuration / Math.Max(1, Demand) / Math.Max(.1f, BusinessRhythm.ArrivalRate(State.daySeconds)) : 3.5f;
         }
 
         /// <summary>ふたり連れの相手を作り、同じグループにする（同じテーブルに座る）。</summary>
@@ -271,6 +283,7 @@ namespace MalatangStory.Game
 
         private void TickOrder(CustomerOrder order, float seconds, bool tutorial)
         {
+            if (order.stage == OrderStage.Delivering) { TickDelivery(order, seconds); return; }
             if (order.IsClosed)
             {
                 order.visualSeconds += seconds;
@@ -283,6 +296,7 @@ namespace MalatangStory.Game
             }
             if (order.stage == OrderStage.Heating)
             {
+                if (State.gaugeMode != 2) order.usedVisibleGauge = true;
                 order.heatSeconds += seconds * CookSpeedMultiplier;
                 StaffWork.AutoDrop(order);
                 float slowest = order.selected.Count == 0 ? 0 : order.selected.Max(x => Catalog.Get(x).cookingSeconds);
@@ -325,9 +339,9 @@ namespace MalatangStory.Game
             if (order.seat >= 0)
             {
                 State.mealRemains.RemoveAll(x => x.seat == order.seat);
-                State.mealRemains.Add(new MealRemains { orderId = order.id, seat = order.seat,
-                    soup = string.IsNullOrEmpty(order.chosenSoup) ? order.soup : order.chosenSoup, spice = order.chosenSpice,
-                    selected = new List<string>(order.selected), condiments = new List<string>(order.condiments), leftovers = order.leftovers });
+                State.mealRemains.Add(new MealRemains { orderId = order.id, seat = order.seat, tipFen = order.tipFen,
+                    bowlStyle = order.bowlStyle, soup = string.IsNullOrEmpty(order.chosenSoup) ? order.soup : order.chosenSoup, spice = order.chosenSpice,
+                    selected = new List<string>(order.selected), condiments = new List<string>(order.condiments), garnishStrokes = GarnishStroke.Copy(order.garnishStrokes), leftovers = order.leftovers });
             }
             order.visualState = "leave";
             order.visualSeconds = 0;
@@ -452,6 +466,7 @@ namespace MalatangStory.Game
             if (r.served >= 10 && r.lost == 0) { State.stats.flawlessDays++; r.highlights.Add("取りこぼしゼロの営業！"); }
             Missions.Update(this, true);
             Contest.Conclude(this);
+            ResolveRivalCookoff();
             Chapters.Check(this);
             DayGrade.Record(State);
             if (r.served >= 10 && r.mealsFinished == r.served && r.finishedFood == r.mealsFinished)
@@ -465,7 +480,7 @@ namespace MalatangStory.Game
 
         public bool NextDay()
         {
-            if (State.phase != DayPhase.Report) return false;
+            if (State.phase != DayPhase.Report || !string.IsNullOrEmpty(State.challengeMode)) return false;
             // 開店前に保管上限まで仕入れていると最後の仕入れ練習ができないため、その場合は練習済みとして扱う。
             if (!State.tutorialComplete && State.tutorialStep == Tutorial.Purchase && Unlocks.Available.All(x => StockFor(x.id).quantity >= State.storageCapacity))
             { State.tutorialStep = TutorialFinished; State.tutorialComplete = true; }
@@ -478,6 +493,7 @@ namespace MalatangStory.Game
             State.recentReviews.InsertRange(0, reviews.Take(6));
             if (State.recentReviews.Count > 20) State.recentReviews.RemoveRange(20, State.recentReviews.Count - 20);
             State.report = new DailyReport();
+            State.preparation = new PreparationState(); State.rushWarnings = 0; State.walkInVisitors = 0; State.festivalStall = false; State.comboRecoveryUsed = false; State.lastBrokenCombo = 0;
             int spoiled = 0;
             foreach (var stock in State.stock)
             {

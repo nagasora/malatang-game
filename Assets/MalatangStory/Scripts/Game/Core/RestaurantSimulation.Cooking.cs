@@ -37,6 +37,7 @@ namespace MalatangStory.Game
         {
             var o = Find(orderId);
             if (o == null || o.stage != OrderStage.Selecting || !Unlocks.IsUnlocked(ingredientId)) return false;
+            if (!ChallengeRules.AllowsIngredient(State, Catalog.Get(ingredientId))) return Fail("チャレンジで使えない具材です。");
             if (o.selected.Count >= MaxIngredientsPerBowl) return Fail("1杯の具材は" + MaxIngredientsPerBowl + "個までです。");
             if (o.selected.Count(x => x == ingredientId) >= Available(ingredientId, o)) return Fail(Catalog.Get(ingredientId).displayName + "は在庫切れです（他の注文で使用中を含む）。");
             o.selected.Add(ingredientId);
@@ -128,6 +129,7 @@ namespace MalatangStory.Game
             o.heatSeconds = 0;
             while (o.dropTimes.Count < o.selected.Count) o.dropTimes.Add(-1);
             for (int i = 0; i < o.dropTimes.Count; i++) o.dropTimes[i] = dropAll ? 0 : -1;
+            o.usedVisibleGauge = State.gaugeMode != 2 || !State.tutorialComplete || o.handledByStaff;
             o.stage = OrderStage.Heating;
             Emit(SimEventKind.HeatingStarted, o.id, pot);
             TutorialAction(Tutorial.Heat);
@@ -204,14 +206,27 @@ namespace MalatangStory.Game
             return true;
         }
 
+        public bool ShakeByHand(string id, float seconds)
+        {
+            var order = Find(id);
+            if (order == null || order.stage != OrderStage.Drained || !(seconds >= 0) || float.IsInfinity(seconds)) return false;
+            order.handRhythm = order.lastHandShake >= 0 && CookingFeel.OnRhythm(seconds - order.lastHandShake) ? Math.Min(3, order.handRhythm + 1) : 0;
+            order.lastHandShake = seconds;
+            return Shake(id);
+        }
+
         /// <summary>スープを注ぐ。種類を変えると量はやり直しになる。</summary>
         public bool PourSoup(string orderId, string soupId, float ml)
         {
             var o = Find(orderId);
             if (o == null || (o.stage != OrderStage.Drained && o.stage != OrderStage.Finishing)) return false;
+            if (!float.IsFinite(ml)) return false;
             if (!Customers.AvailableSoups.Any(x => x.Id == soupId)) return Fail("このスープはまだ作れません。");
             if (TutorialBlocks(Tutorial.Soup, "先に網じゃくを2回以上振って湯切りしましょう。")) return false;
             if (o.chosenSoup != soupId) { o.chosenSoup = soupId; o.soupMl = 0; }
+            float overflow = Math.Max(0, o.soupMl + Math.Max(0, ml) - 450) - Math.Max(0, o.soupMl - 450);
+            if (o.counterSpillMl == 0 && overflow > 0) Notify("あっ、少しこぼれちゃった。台のしみをタップして、ふきふきしよう。");
+            o.counterSpillMl = Math.Min(100, o.counterSpillMl + overflow);
             o.soupMl = Math.Max(0, Math.Min(600, o.soupMl + ml));
             o.stage = OrderStage.Finishing;
             Emit(SimEventKind.SoupPoured, o.id, (long)o.soupMl, soupId);
@@ -219,6 +234,13 @@ namespace MalatangStory.Game
             if (State.tutorialStep == Tutorial.Soup && soupId == o.soup && o.soupMl >= soup.IdealMinMl && o.soupMl <= soup.IdealMaxMl) TutorialAction(Tutorial.Soup);
             Changed?.Invoke();
             return true;
+        }
+
+        public bool WipeCounter(string orderId)
+        {
+            var order = Find(orderId);
+            if (order == null || order.counterSpillMl <= 0) return false;
+            order.counterSpillMl = 0; Notify("ふきふき。台がきれいになりました！"); Save(); return true;
         }
 
         /// <summary>v1 互換：スープを選ぶ（理想量の中央まで注ぐ）。</summary>
@@ -286,11 +308,20 @@ namespace MalatangStory.Game
             o.consumedCostFen += seasoningCost;
             State.report.foodCostFen += seasoningCost;
             o.report = QualityEvaluator.Evaluate(o, Catalog, FreshnessScore, archetype.Strictness);
+            if (o.handRhythm >= 2)
+            {
+                o.report.total = Math.Min(100, o.report.total + CookingFeel.HandRhythmBonus);
+                o.report.comments.Add("リズムよく湯切りされて、口当たりがいい！");
+            }
+            CustomerWishes.ApplyBonus(o, Catalog);
             Recipes.ApplyBonus(o);
             Pairings.ApplyBonus(o);
             MorningMarket.ApplyBonus(o, Catalog);
             if (o.omakase) o.report.total = Math.Min(o.report.total, Omakase.QualityCap(o, Catalog));
+            o.report.total = Math.Max(0, Math.Min(100, o.report.total + PreparationRules.Bonus(State, o.chosenSoup)));
+            o.bowlStyle = o.takeout ? "paper" : State.collectionBowl ? "jade" : State.theme;
             o.quality = o.report.total;
+            o.expertBowl = !o.usedVisibleGauge && State.gaugeMode == 2 && !o.handledByStaff && o.quality >= 85;
             o.stage = OrderStage.Ready;
             o.pot = -1;
             Emit(SimEventKind.Finished, o.id, (long)o.quality);
@@ -309,6 +340,7 @@ namespace MalatangStory.Game
             var o = Find(id);
             if (o == null || o.stage != OrderStage.Ready) return false;
             if (!o.takeout && o.seat < 0) return Fail(o.customerName + "の席が空いていません。テーブルを片付けましょう。");
+            if (o.delivery && !o.delivered) return DispatchDelivery(o);
             o.stage = OrderStage.Served;
             o.visualState = o.takeout ? "leave" : "eat";
             o.visualSeconds = 0;
@@ -330,6 +362,10 @@ namespace MalatangStory.Game
             State.stats.bestDayServed = Math.Max(State.stats.bestDayServed, r.served);
             Recipes.RecordServed(this, o);
             Pairings.RecordServed(this, o);
+            var houseSoup = State.houseSoups.FirstOrDefault(x => x.id == State.activeHouseSoup && x.soup == o.chosenSoup);
+            if (houseSoup != null) houseSoup.served++;
+            if (State.report.bestBowl == null || o.quality >= State.report.bestBowl.score)
+                State.report.bestBowl = BowlAlbum.Snapshot(State, o);
             if (BowlAlbum.Record(State, o)) Emit(SimEventKind.AlbumAdded, o.id, (long)o.quality, "一杯アルバムに載りました（" + o.quality.ToString("0") + "点）");
             if (o.omakase && o.quality >= 85) State.stats.omakaseGreat++;
             foreach (string item in o.selected) LifetimeStats.Add(State.stats.ingredientsServed, item);
@@ -347,7 +383,7 @@ namespace MalatangStory.Game
             UpdateRegular(o, archetype);
             UpdateSignature(o);
             var added = Unlocks.SettleOrder(o.id, o.paidFen, Math.Min(o.paidFen, o.discountFen));
-            int xp = 6 + (int)(o.quality / 20) + (o.quality >= 95 ? 2 : 0);
+            int xp = 6 + (int)(o.quality / 20) + (o.quality >= 95 ? 2 : 0) + (o.expertBowl ? CookingFeel.ExpertExperienceBonus : 0);
             Progression.AddExperience(this, xp);
             Emit(SimEventKind.Served, o.id, (long)o.quality, o.review);
             foreach (var item in added) Emit(SimEventKind.Unlock, item.id, 0, "新しい食材「" + item.displayName + "」を仕入れられるようになりました！");
@@ -407,6 +443,7 @@ namespace MalatangStory.Game
                 State.regulars.Add(regular);
                 Emit(SimEventKind.Regular, regular.id, 1, o.customerName + "が常連になりました！");
             }
+            regular.lastVisitDay = State.day; regular.concerned = false;
             regular.visits++;
             regular.affinity = Math.Max(0, Math.Min(100, regular.affinity + (o.report.satisfaction - 60) / 4f));
             int story = (int)(regular.affinity / 25);

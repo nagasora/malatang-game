@@ -61,7 +61,7 @@ namespace MalatangStory.Game
             string sig = category + ":" + S.day + ":" + S.phase + ":" + S.marketPurchased + ":" + S.moneyFen + ":" + string.Join(",", S.stock.Select(x => x.quantity)) + ":" + S.ingredients.unlockedIds.Count + ":" + S.storageCapacity;
             bool sale = Sim.PurchaseMultiplier < 1;
             header.text = (Sim.CanManage ? "食材は5個単位。鮮度は3日" + (Sim.FreshnessBonusDays > 0 ? "＋冷蔵庫1日" : "") + "。保管上限 " + S.storageCapacity + "個／食材" : "営業中は在庫の確認のみできます。")
-                + (sale ? "　<color=#b02a1e><b>本日セール 3割引！</b></color>" : "");
+                + (sale ? "　本日セール 3割引！" : "");
             var next = Sim.Unlocks.Next;
             if (next == null) { unlockText.text = "通常69種類の食材が解禁済み！"; UIKit.SetBar(unlockFill, 1); }
             else

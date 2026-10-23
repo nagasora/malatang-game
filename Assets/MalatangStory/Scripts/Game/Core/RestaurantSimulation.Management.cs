@@ -13,6 +13,7 @@ namespace MalatangStory.Game
         {
             if (!CanManage) return Fail("仕入れは営業前か閉店後に行えます。");
             if (count <= 0 || !Unlocks.IsUnlocked(id)) return false;
+            if (!ChallengeRules.AllowsIngredient(State, Catalog.Get(id))) return Fail("今週のチャレンジでは野菜と麺だけを使えます。");
             if (Catalog.Get(id).isRare) return Fail("希少食材は当日の朝市でのみ仕入れられます。");
             var stock = StockFor(id);
             int free = State.storageCapacity - stock.quantity;
@@ -39,6 +40,7 @@ namespace MalatangStory.Game
             var item = MorningMarket.Current(this);
             if (State.phase != DayPhase.Preparation || item == null) return Fail("朝市は3日目以降の朝に開かれます。");
             if (State.marketPurchased) return Fail("本日の朝市は売り切れです。");
+            if (!ChallengeRules.AllowsIngredient(State, item)) return false;
             var stock = StockFor(item.id);
             if (stock.quantity > State.storageCapacity - MorningMarket.BatchSize) return Fail("保管場所を5個分空けてください。");
             long cost = checked(PurchaseCost(item) * MorningMarket.BatchSize);
@@ -60,7 +62,7 @@ namespace MalatangStory.Game
         {
             if (!CanManage) { Fail("仕入れは営業前か閉店後に行えます。"); return 0; }
             int bought = 0;
-            foreach (var item in Unlocks.Available.Where(x => !x.isRare).OrderByDescending(x => x.popularity))
+            foreach (var item in Unlocks.Available.Where(x => !x.isRare && ChallengeRules.AllowsIngredient(State, x)).OrderByDescending(x => x.popularity))
             {
                 var stock = StockFor(item.id);
                 int want = Math.Min(target, State.storageCapacity) - stock.quantity;
@@ -217,12 +219,12 @@ namespace MalatangStory.Game
             if (!State.tutorialComplete || !CanManage) return Fail("スタッフの採用は営業前か閉店後に行えます。");
             var def = Content.StaffFor(role);
             if (State.shopLevel < def.UnlockLevel) return Fail("店舗レベル" + def.UnlockLevel + "で採用できます。");
-            if (State.staff.Any(x => x.role == role)) return Fail(def.Title + "はすでにいます。");
+            if (State.staff.Count(x => x.role == role) >= 3 || State.staff.Count >= 9) return Fail("同じ役割は3人、合計9人まで採用できます。");
             if (State.moneyFen < def.HireFeeFen) return Fail("採用費が足りません。");
             State.moneyFen -= def.HireFeeFen;
             State.report.investmentFen += def.HireFeeFen;
-            int seed = CustomerDirector.StableHash(role + ":" + State.day);
-            State.staff.Add(new HiredStaff { role = role, name = Content.GivenNames[Math.Abs(seed) % Content.GivenNames.Length], appearanceSeed = seed });
+            int seed = CustomerDirector.StableHash(role + ":" + State.day + ":" + State.nextStaffId);
+            State.staff.Add(new HiredStaff { id = "staff-" + State.nextStaffId++, personality = (seed & int.MaxValue) % 3, role = role, name = Content.GivenNames[Math.Abs(seed) % Content.GivenNames.Length], appearanceSeed = seed });
             Emit(SimEventKind.StaffChanged, role.ToString(), 1, def.Title);
             Progression.CheckAchievements(this);
             Notify(def.Title + "を採用しました！営業中に自動で働きます。");
@@ -230,24 +232,26 @@ namespace MalatangStory.Game
             return true;
         }
 
-        public bool FireStaff(StaffRole role)
+        public bool FireStaff(StaffRole role) => FireStaff(State.staff.FirstOrDefault(x => x.role == role)?.id);
+        public bool FireStaff(string id)
         {
             if (!CanManage) return Fail("営業中は解雇できません。");
-            int removed = State.staff.RemoveAll(x => x.role == role);
-            if (removed == 0) return false;
-            Emit(SimEventKind.StaffChanged, role.ToString(), -1);
-            Notify(Content.StaffFor(role).Title + "との契約を終了しました。");
-            Save();
-            return true;
+            var member = State.staff.FirstOrDefault(x => x.id == id);
+            if (member == null) return false;
+            State.staff.Remove(member);
+            if (!State.staff.Any(x => x.role == StaffRole.Courier)) State.deliveryEnabled = false;
+            Emit(SimEventKind.StaffChanged, id, -1);
+            Notify(member.name + "との契約を終了しました。"); Save(); return true;
         }
 
         /// <summary>研修費（現在の研修レベル×200元）。</summary>
         public static long TrainingCost(HiredStaff member) => member.trainingLevel * 20000L;
 
-        public bool TrainStaff(StaffRole role)
+        public bool TrainStaff(StaffRole role) => TrainStaff(State.staff.FirstOrDefault(x => x.role == role)?.id);
+        public bool TrainStaff(string id)
         {
             if (!CanManage) return Fail("研修は営業前か閉店後に行えます。");
-            var member = State.staff.FirstOrDefault(x => x.role == role);
+            var member = State.staff.FirstOrDefault(x => x.id == id);
             if (member == null) return false;
             if (member.trainingLevel >= 3) return Fail("研修は最大レベルです。");
             long cost = TrainingCost(member);
@@ -255,7 +259,7 @@ namespace MalatangStory.Game
             State.moneyFen -= cost;
             State.report.investmentFen += cost;
             member.trainingLevel++;
-            Emit(SimEventKind.StaffChanged, role.ToString(), 0);
+            Emit(SimEventKind.StaffChanged, id, 0);
             Notify(member.name + "の研修が完了し、レベル" + member.trainingLevel + "になりました。");
             Save();
             return true;
@@ -290,8 +294,9 @@ namespace MalatangStory.Game
         /// <summary>店名を変更する。</summary>
         public void RenameStore(string name)
         {
-            if (string.IsNullOrWhiteSpace(name)) return;
-            State.storeName = name.Trim().Length > 16 ? name.Trim().Substring(0, 16) : name.Trim();
+            string clean = PlayerText.Clean(name);
+            if (clean.Length == 0) return;
+            State.storeName = clean;
             Changed?.Invoke(); Save();
         }
     }

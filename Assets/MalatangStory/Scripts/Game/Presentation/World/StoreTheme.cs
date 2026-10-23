@@ -98,7 +98,7 @@ namespace MalatangStory.Game
             textures.Clear();
             Palette p = Colors(id);
             Texture2D wall = Own(PatternTexture(Surface.Wall, p.Wall, p.Pattern));
-            Texture2D wood = Own(PatternTexture(Surface.Wood, p.LightWood, p.Wood));
+            Texture2D wood = Own(UnityEngine.Object.Instantiate(TextureFactory.WoodPlanks(256, p.LightWood, p.Wood, 531)));
             Texture2D tile = Own(PatternTexture(Surface.KitchenFloor, p.Tile, p.Grout));
             Texture2D floor = id == "cafe" ? Own(Concrete(p.Floor))
                 : id == "neon" ? Own(PatternTexture(Surface.KitchenFloor, p.Floor, p.Grout))
@@ -106,7 +106,7 @@ namespace MalatangStory.Game
             Texture2D fabric = Own(PatternTexture(Surface.Fabric, p.Fabric, p.Fabric * .8f));
             Set(Surface.Wall, Color.white, wall, new Vector2(6, 1.5f));
             Set(Surface.Wood, Color.white, wood, new Vector2(3, 1));
-            Set(Surface.Floor, id == "cafe" || id == "neon" || id == "lantern" ? Color.white : p.Floor, floor, new Vector2(5, 4));
+            Set(Surface.Floor, Color.white, floor, new Vector2(5, 4));
             Set(Surface.KitchenFloor, Color.white, tile, new Vector2(8, 3));
             Set(Surface.KitchenWall, Color.white, tile, new Vector2(8, 2));
             Set(Surface.Counter, id == "shitamachi" || id == "neon" ? p.Accent : Color.white,

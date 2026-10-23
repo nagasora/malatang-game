@@ -15,21 +15,27 @@ namespace MalatangStory.Game
         {
             public CharacterRig Rig;
             public NavMeshAgent Agent;
-            public bool Seated, Leaving, Arrived, VisitedFridge, ReachedDoor;
+            public bool Seated, Leaving, Arrived, VisitedFridge, ReachedDoor, GreetedRegular;
             /// <summary>来店・退店で使う歩道の端（左右どちらから来たか）。</summary>
             public Vector3 Street;
             public GameObject Bowl;
             public MealBowlView Meal;
             public float EmoteCooldown;
+            public EatingStage LastEatingStage;
             public OrderStage LastStage = (OrderStage)(-1);
         }
 
         private readonly RestaurantWorld world;
         private readonly Transform root;
         private readonly Dictionary<string, Actor> customers = new Dictionary<string, Actor>();
-        private readonly Dictionary<StaffRole, Actor> staff = new Dictionary<StaffRole, Actor>();
+        private readonly Dictionary<string, Actor> staff = new Dictionary<string, Actor>();
         private readonly List<GameObject> passBowls = new List<GameObject>();
-        private string passSignature = "";
+        private readonly HashSet<string> orderIds = new HashSet<string>();
+        private readonly List<string> staleIds = new List<string>();
+        private readonly List<CustomerOrder> queue = new List<CustomerOrder>();
+        private readonly List<CustomerOrder> waiting = new List<CustomerOrder>();
+        private readonly List<CustomerOrder> ready = new List<CustomerOrder>(4);
+        private readonly List<string> passIds = new List<string>(4);
 
         public AgentDirector(RestaurantWorld world, Transform parent)
         {
@@ -50,11 +56,16 @@ namespace MalatangStory.Game
         public static void Configure(NavMeshAgent agent, float speed)
         {
             agent.speed = speed; agent.angularSpeed = 720; agent.acceleration = 14; agent.radius = .24f; agent.height = 1.4f;
-            agent.stoppingDistance = .08f; agent.autoBraking = true; agent.obstacleAvoidanceType = ObstacleAvoidanceType.LowQualityObstacleAvoidance;
+            agent.stoppingDistance = .08f; agent.autoBraking = true; agent.obstacleAvoidanceType = ObstacleAvoidanceType.MedQualityObstacleAvoidance;
         }
 
         /// <summary>客の位置（浮かぶ文字用）。</summary>
-        public Vector3? CustomerPosition(string orderId) => customers.TryGetValue(orderId, out var a) && a.Rig != null ? a.Rig.transform.position + Vector3.up * 1.6f : (Vector3?)null;
+        public Vector3? CustomerPosition(string orderId) => orderId != null && customers.TryGetValue(orderId, out var a) && a.Rig != null ? a.Rig.transform.position + Vector3.up * 1.6f : (Vector3?)null;
+
+        public void Talk(string id, float seconds)
+        {
+            if (id != null && customers.TryGetValue(id, out var actor) && actor.Rig != null) actor.Rig.Talk(seconds);
+        }
 
         /// <summary>客の反応を出す。</summary>
         public void React(string orderId, float quality)
@@ -69,14 +80,20 @@ namespace MalatangStory.Game
         {
             var sim = Sim;
             var orders = sim.State.orders;
-            var ids = new HashSet<string>(orders.Select(o => o.id));
-            foreach (var stale in customers.Keys.Where(id => !ids.Contains(id)).ToArray()) Remove(stale);
-            var queue = orders.Where(o => o.stage == OrderStage.Waiting).ToList();
-            var waiting = orders.Where(o => !o.takeout && o.seat < 0 && o.AwaitsBowl).ToList();
-            waiting.AddRange(orders.Where(o => o.takeout && o.AwaitsBowl));
+            orderIds.Clear(); queue.Clear(); waiting.Clear(); staleIds.Clear();
+            foreach (var order in orders)
+            {
+                orderIds.Add(order.id);
+                if (order.stage == OrderStage.Waiting) queue.Add(order);
+                if (!order.takeout && order.seat < 0 && order.AwaitsBowl) waiting.Add(order);
+            }
+            foreach (var order in orders) if (order.takeout && order.AwaitsBowl) waiting.Add(order);
+            foreach (string id in customers.Keys) if (!orderIds.Contains(id)) staleIds.Add(id);
+            foreach (string id in staleIds) Remove(id);
             int rows = DiningLayout.Rows(sim.State);
             foreach (var order in orders)
             {
+                if (order.delivery) continue;
                 bool done = order.stage == OrderStage.Cancelled || (order.stage == OrderStage.Served && order.visualState == "leave");
                 if (!customers.TryGetValue(order.id, out var actor))
                 {
@@ -98,6 +115,10 @@ namespace MalatangStory.Game
             var archetype = Content.Archetype(order.archetype);
             var appearance = CharacterAppearance.ForArchetype(order.archetype, order.appearanceSeed, archetype.Child);
             var rig = CharacterFactory.Create(appearance, order.customerName, root);
+            var target = rig.gameObject.AddComponent<CustomerTarget>(); target.OrderId = order.id;
+            rig.gameObject.layer = RestaurantWorld.CustomerLayer;
+            var capsule = rig.gameObject.AddComponent<CapsuleCollider>();
+            capsule.center = Vector3.up * .8f; capsule.radius = .28f; capsule.height = 1.6f; capsule.isTrigger = true;
             Vector3 door = StoreLayout.Door(rows) + new Vector3((order.appearanceSeed % 7 - 3) * .15f, 0, 0);
             Vector3 street = Street(order.appearanceSeed, rows);
             // 歩道から歩いて来るが、ナビメッシュが歩道まで届かない店の形では入口に直接出す。
@@ -107,7 +128,7 @@ namespace MalatangStory.Game
             float speed = order.archetype == "rider" ? 3.0f : order.archetype == "elder" ? 1.5f : order.archetype == "drunk" ? 1.6f : 2.1f + (order.appearanceSeed % 5) * .1f;
             Configure(agent, speed);
             if (NavMesh.SamplePosition(start, out var hit, 3f, NavMesh.AllAreas)) agent.Warp(hit.position);
-            var actor = new Actor { Rig = rig, Agent = agent, VisitedFridge = order.style != OrderStyle.SelfServe, Street = start, ReachedDoor = start == door };
+            var actor = new Actor { Rig = rig, Agent = agent, VisitedFridge = Sim.State.festivalStall || order.style != OrderStyle.SelfServe, Street = start, ReachedDoor = start == door };
             customers[order.id] = actor;
             return actor;
         }
@@ -117,7 +138,7 @@ namespace MalatangStory.Game
             => new Vector3((seed & 1) == 0 ? -9.2f : 9.2f, 0, StoreLayout.FrontZ(rows) - 1.9f - (seed % 3) * .3f);
 
         /// <summary>客の頭上の位置（吹き出し用）。</summary>
-        public Vector3? CustomerHead(string orderId) => customers.TryGetValue(orderId, out var a) && a.Rig != null ? a.Rig.transform.position + Vector3.up * (a.Seated ? 1.45f : 1.85f) : (Vector3?)null;
+        public Vector3? CustomerHead(string orderId) => orderId != null && customers.TryGetValue(orderId, out var a) && a.Rig != null ? a.Rig.transform.position + Vector3.up * (a.Seated ? 1.45f : 1.85f) : (Vector3?)null;
 
         /// <summary>食事終了イベントで元の器を即座に隠し、同じ席の二重表示を防ぎます。</summary>
         public void FinishMeal(string id)
@@ -182,19 +203,36 @@ namespace MalatangStory.Game
             bool leaving = order.stage == OrderStage.Cancelled || (order.stage == OrderStage.Served && order.visualState == "leave");
             if (leaving)
             {
+                rig.SetSpicyMeal(false);
                 if (!actor.Leaving)
                 {
                     actor.Leaving = true;
                     if (order.stage == OrderStage.Cancelled) { rig.Mood = CharacterMood.Angry; rig.ShowEmote(EmoteKind.Anger, 2.5f); }
-                    else if (order.takeout) rig.ShowEmote(EmoteKind.Heart, 2f);
+                    else
+                    {
+                        rig.SetPose(CharacterPose.Wave);
+                        rig.ShowEmote(order.tipFen > 0 ? EmoteKind.Coin : EmoteKind.Heart, 2f);
+                        if (!string.IsNullOrEmpty(order.regularId)) world.Speak(order.id, Sim.State.storeName + "の大将、また来るね！", false, 2.5f);
+                    }
                 }
                 Stand(actor);
+                if (order.takeout && order.stage == OrderStage.Served && actor.Bowl == null)
+                { actor.Bowl = world.Kitchen.CreateServedBowl(order, rig.transform.position); rig.SetCarry(actor.Bowl.transform); }
+                if (order.stage == OrderStage.Served && order.visualSeconds < 1.5f) rig.SetPose(CharacterPose.Wave);
                 Vector3 exit = StoreLayout.Door(rows) + Vector3.back * .8f;
                 if (!actor.ReachedDoor && Reached(actor, exit, .9f)) actor.ReachedDoor = true;
                 // 店を出たあとは来た方向の歩道へ歩き去る（歩道へ道が無い時は入口で消える）。
                 Vector3 away = actor.ReachedDoor && actor.Street != Vector3.zero ? actor.Street : exit;
                 MoveTo(actor, away);
                 if (Reached(actor, away, .9f) || order.visualSeconds > 18) Remove(order.id);
+                return;
+            }
+            if (Sim.State.festivalStall)
+            {
+                actor.ReachedDoor = true;
+                int place = Mathf.Max(0, queue.IndexOf(order));
+                MoveTo(actor, new Vector3(.5f + place * .6f, 0, StoreLayout.FrontZ(rows) - 2.2f));
+                rig.LookAt(new Vector3(3, 1.4f, StoreLayout.FrontZ(rows) - 2.2f));
                 return;
             }
             if (!actor.ReachedDoor)
@@ -215,7 +253,7 @@ namespace MalatangStory.Game
                     }
                     rig.SetPose(CharacterPose.Idle);
                     int index = queue.IndexOf(order);
-                    var spot = StoreLayout.QueueSpot(Mathf.Max(0, index));
+                    var spot = StoreLayout.QueueSpot(Mathf.Max(0, index), rows);
                     MoveTo(actor, spot);
                     if (Reached(actor, spot)) rig.LookAt(StoreLayout.RegisterTop);
                     break;
@@ -238,7 +276,12 @@ namespace MalatangStory.Game
                     {
                         if (!Reached(actor, eatSeat.Position, .45f)) { MoveTo(actor, eatSeat.Position); break; }
                         Sit(actor, eatSeat);
-                        rig.SetPose(CharacterPose.Eat);
+                        rig.SetPose(order.eatSeconds < 1.2f ? (order.archetype == "influencer" ? CharacterPose.Think : CharacterPose.Pray) : CharacterPose.Eat);
+                        rig.SetSpicyMeal(order.chosenSpice > order.spice || order.chosenSpice >= 5 && order.archetype != "spicy");
+                        EatingStage eatingStage = CookingFeel.MealStage(order.eatSeconds);
+                        if (eatingStage != actor.LastEatingStage && (eatingStage == EatingStage.Lift || eatingStage == EatingStage.Sip))
+                            world.App.Audio.PlayPitched(Sfx.Slurp, CustomerVoice.VoicePitch(order), .07f);
+                        actor.LastEatingStage = eatingStage;
                         if (actor.Bowl == null)
                         {
                             actor.Bowl = world.Kitchen.CreateServedBowl(order, BowlSpot(eatSeat, order.seat));
@@ -265,11 +308,36 @@ namespace MalatangStory.Game
                     }
                     break;
             }
+            if (actor.Seated && !actor.GreetedRegular && !string.IsNullOrEmpty(order.regularId))
+            {
+                foreach (var other in Sim.State.orders)
+                    if (other.id != order.id && !string.IsNullOrEmpty(other.regularId) && customers.TryGetValue(other.id, out var neighbour) && neighbour.Seated)
+                    { world.Speak(order.id, other.customerName + "さん、今日も会えましたね。", false, 2.5f); rig.SetPose(CharacterPose.Wave); actor.GreetedRegular = true; break; }
+            }
+            if (actor.Seated && !string.IsNullOrEmpty(order.groupId) && actor.EmoteCooldown <= 0)
+            {
+                int index = 0, count = 0; CustomerOrder partner = null;
+                foreach (var other in Sim.State.orders)
+                    if (other.groupId == order.groupId) { if (other.id == order.id) index = count; else partner = other; count++; }
+                if (count > 1 && (int)(Time.time / 5) % count == index)
+                {
+                    world.Speak(order.id, index % 2 == 0 ? "これ、おいしいね！" : "また一緒に来ようね。", false, 2);
+                    Vector3? point = partner != null ? CustomerPosition(partner.id) : null;
+                    if (point.HasValue) rig.LookAt(point.Value);
+                    actor.EmoteCooldown = count * 5;
+                }
+            }
             float patience = order.paidFen == 0 ? order.elapsed / Mathf.Max(1, order.patience) : order.elapsed / Mathf.Max(1, order.patience * 2);
             if (order.stage != OrderStage.Served)
             {
-                var mood = patience < .45f ? CharacterMood.Happy : patience < .75f ? CharacterMood.Neutral : patience < .95f ? CharacterMood.Impatient : CharacterMood.Angry;
+                var mood = patience < .3f ? CharacterMood.Happy : patience < .6f ? CharacterMood.Neutral : patience < .85f ? CharacterMood.Impatient : CharacterMood.Angry;
                 if (rig.Mood != mood) { rig.Mood = mood; if (mood == CharacterMood.Impatient && actor.EmoteCooldown <= 0) { rig.ShowEmote(EmoteKind.Sweat, 2f); actor.EmoteCooldown = 8; } }
+                if ((order.stage == OrderStage.Waiting || order.AwaitsBowl) && actor.Agent.velocity.sqrMagnitude < .01f)
+                {
+                    if (patience >= .6f) rig.SetPose(CharacterPose.WaitSigh);
+                    else if (patience >= .3f) rig.SetPose(CharacterPose.WaitFidget);
+                    if (patience >= .6f && actor.EmoteCooldown <= 0) { rig.ShowEmote(EmoteKind.Steam, 2); actor.EmoteCooldown = 8; }
+                }
                 if (stageChanged && order.stage == OrderStage.Waiting && actor.EmoteCooldown <= 0) { rig.ShowEmote(order.archetype == "critic" ? EmoteKind.Exclamation : EmoteKind.Question, 2f); actor.EmoteCooldown = 4; }
                 if (stageChanged && (order.stage == OrderStage.Weighed || (order.stage == OrderStage.Selecting && order.paidFen > 0))) rig.ShowEmote(EmoteKind.Coin, 1.5f);
             }
@@ -294,29 +362,29 @@ namespace MalatangStory.Game
                 appearance.apron = true; appearance.apronColor = member.role == StaffRole.Cook ? 2 : member.role == StaffRole.Server ? 1 : 3;
                 appearance.hatStyle = member.role == StaffRole.Cook ? 1 : 2; appearance.accessory = 0;
                 var rig = CharacterFactory.Create(appearance, member.name, root);
-                Vector3 home = Home(member.role);
+                Vector3 home = Home(member.role) + Vector3.right * (Sim.State.staff.IndexOf(member) % 3) * .5f;
                 rig.transform.position = home;
                 var agent = rig.gameObject.AddComponent<NavMeshAgent>();
                 Configure(agent, 3.2f);
                 if (NavMesh.SamplePosition(home, out var hit, 2f, NavMesh.AllAreas)) agent.Warp(hit.position);
-                staff[member.role] = new Actor { Rig = rig, Agent = agent };
+                staff[member.id] = new Actor { Rig = rig, Agent = agent };
             }
         }
 
-        private static Vector3 Home(StaffRole role) => role == StaffRole.Cashier ? StoreLayout.RegisterStaff + Vector3.left * .6f : role == StaffRole.Server ? StoreLayout.PassStaff + Vector3.right * .6f : StoreLayout.CookStaff;
+        private Vector3 Home(StaffRole role) => role == StaffRole.Courier ? StoreLayout.Door(DiningLayout.Rows(Sim.State)) + new Vector3(2, 0, 1) : role == StaffRole.Cashier ? StoreLayout.RegisterStaff + Vector3.left * .6f : role == StaffRole.Server ? StoreLayout.PassStaff + Vector3.right * .6f : StoreLayout.CookStaff;
 
         private void UpdateStaff(float deltaTime, bool paused)
         {
             foreach (var member in Sim.State.staff)
             {
-                if (!staff.TryGetValue(member.role, out var actor) || actor.Rig == null) continue;
+                if (!staff.TryGetValue(member.id, out var actor) || actor.Rig == null) continue;
                 EnsureOnNav(actor.Agent);
                 if (!actor.Agent.isOnNavMesh) continue;
                 actor.Agent.isStopped = paused;
                 if (paused) continue;
                 actor.Rig.SetMoveSpeed(actor.Agent.velocity.magnitude);
                 Vector3 target = Home(member.role);
-                var pose = CharacterPose.Idle;
+                var pose = member.resting ? CharacterPose.Sit : CharacterPose.Idle;
                 var order = Sim.Find(member.taskTarget);
                 switch (member.task)
                 {
@@ -346,10 +414,17 @@ namespace MalatangStory.Game
 
         private void UpdatePassBowls()
         {
-            var ready = Sim.State.orders.Where(o => o.stage == OrderStage.Ready && o.id != world.CarriedOrderId).Take(4).ToList();
-            string signature = string.Join(",", ready.Select(o => o.id));
-            if (signature == passSignature) return;
-            passSignature = signature;
+            ready.Clear();
+            foreach (var order in Sim.State.orders)
+                if (order.stage == OrderStage.Ready && order.id != world.CarriedOrderId)
+                {
+                    ready.Add(order);
+                    if (ready.Count == 4) break;
+                }
+            bool changed = ready.Count != passIds.Count;
+            for (int i = 0; !changed && i < ready.Count; i++) changed = ready[i].id != passIds[i];
+            if (!changed) return;
+            passIds.Clear(); foreach (var order in ready) passIds.Add(order.id);
             foreach (var b in passBowls) if (b != null) Object.Destroy(b);
             passBowls.Clear();
             for (int i = 0; i < ready.Count; i++)

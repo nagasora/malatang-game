@@ -10,18 +10,38 @@ namespace MalatangStory.Game
     public sealed class StaffSystem
     {
         private readonly RestaurantSimulation sim;
+        private float chatterSeconds;
         public StaffSystem(RestaurantSimulation simulation) { sim = simulation; }
 
         private GameState S => sim.State;
 
         /// <summary>1作業の所要秒（研修レベルで短くなる）。</summary>
         public static float TaskSeconds(HiredStaff member)
-            => Content.StaffFor(member.role).BaseTaskSeconds * (1f - .2f * (Math.Max(1, member.trainingLevel) - 1));
+            => Content.StaffFor(member.role).BaseTaskSeconds * (1f - .2f * (Math.Max(1, member.trainingLevel) - 1))
+                * (member.personality == 0 ? .9f : member.personality == 1 ? 1.05f : 1f)
+                * (1 + member.fatigue * .005f + Math.Max(0, 50 - member.motivation) * .005f);
 
         public void Tick(float seconds)
         {
+            chatterSeconds += seconds;
+            if (chatterSeconds >= 90)
+            {
+                chatterSeconds %= 90;
+                var speaker = S.staff.FirstOrDefault(x => x.personality == 2 && !x.resting && x.busySeconds <= 0);
+                var listener = speaker == null ? null : S.staff.FirstOrDefault(x => x != speaker && !x.resting && x.busySeconds <= 0);
+                if (listener != null)
+                {
+                    speaker.motivation = Math.Min(100, speaker.motivation + 2); listener.motivation = Math.Min(100, listener.motivation + 2);
+                    sim.Emit(SimEventKind.StaffAction, speaker.id, 1, speaker.name + "「" + listener.name + "さん、ひと息つきましょう」");
+                }
+            }
             foreach (var member in S.staff)
             {
+                if (member.resting)
+                {
+                    member.fatigue = Math.Max(0, member.fatigue - seconds * .2f); continue;
+                }
+                member.fatigue = Math.Min(100, member.fatigue + seconds * .02f);
                 if (member.busySeconds > 0)
                 {
                     member.busySeconds -= seconds;
@@ -31,7 +51,7 @@ namespace MalatangStory.Game
             }
         }
 
-        private bool Available(CustomerOrder o) => o.id != sim.PlayerFocusOrderId;
+        private bool Available(CustomerOrder o) => o.id != sim.PlayerFocusOrderId && !S.staff.Any(x => x.busySeconds > 0 && x.taskTarget == o.id);
 
         private void Assign(HiredStaff member)
         {
@@ -39,9 +59,14 @@ namespace MalatangStory.Game
             switch (member.role)
             {
                 case StaffRole.Server:
-                    var ready = S.orders.FirstOrDefault(o => o.stage == OrderStage.Ready && Available(o) && (o.takeout || o.seat >= 0));
+                    var ready = S.orders.FirstOrDefault(o => o.stage == OrderStage.Ready && !o.delivery && Available(o) && (o.takeout || o.seat >= 0));
                     if (ready != null) { task = "serve"; target = ready.id; }
                     else if (S.dirtyTables.Count > 0 && !S.staff.Any(x => x != member && x.task == "clean")) { task = "clean"; target = S.dirtyTables[0].ToString(); }
+                    break;
+                case StaffRole.Courier:
+                    if (S.orders.Count(o => o.stage == OrderStage.Delivering) >= S.staff.Count(x => x.role == StaffRole.Courier && !x.resting)) break;
+                    var delivery = S.orders.FirstOrDefault(o => o.stage == OrderStage.Ready && o.delivery && Available(o));
+                    if (delivery != null) { task = "serve"; target = delivery.id; }
                     break;
                 case StaffRole.Cashier:
                     var waiting = S.orders.FirstOrDefault(o => o.IsAtRegister && Available(o));
@@ -117,7 +142,7 @@ namespace MalatangStory.Game
         {
             var soup = Content.Soup(o.soup);
             if (!sim.Customers.AvailableSoups.Any(x => x.Id == soup.Id)) soup = Content.Soups[0];
-            float error = member.trainingLevel >= 3 ? 0 : member.trainingLevel == 2 ? 15 : 35;
+            float error = member.trainingLevel >= 3 || member.personality == 1 ? 0 : member.trainingLevel == 2 ? 15 : 35;
             float sign = CustomerDirector.StableHash(o.id) % 2 == 0 ? 1 : -1;
             sim.PourSoup(o.id, soup.Id, (soup.IdealMinMl + soup.IdealMaxMl) / 2 + sign * error);
             for (int i = 0; i < o.spice; i++) sim.AddCondiment(o.id, Content.ChiliOil);

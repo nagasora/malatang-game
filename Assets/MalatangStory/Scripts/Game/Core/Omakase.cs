@@ -137,6 +137,8 @@ namespace MalatangStory.Game
                 if (item == null || pick.Contains(item.id) || pick.Count >= RestaurantSimulation.MaxIngredientsPerBowl) return;
                 pick.Add(item.id); grams += item.portionGrams;
             }
+            if (o.wish == "noodles") foreach (var noodle in pool.Where(x => x.category == "noodle").Take(2)) Take(noodle);
+            if (o.wish == "photogenic") foreach (var colour in pool.GroupBy(x => FoodProfile.Of(x).Color).Take(3)) Take(colour.First());
             if (o.likeTexture >= 0) Take(pool.FirstOrDefault(x => (int)FoodProfile.Of(x).Texture == o.likeTexture));
             foreach (var role in new[] { FoodRole.Vegetable, FoodRole.Protein, FoodRole.Staple })
                 Take(pool.FirstOrDefault(x => FoodProfile.Of(x).Role == role && !pick.Contains(x.id)));

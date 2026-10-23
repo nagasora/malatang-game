@@ -73,7 +73,9 @@ namespace MalatangStory.Game
         /// <summary>喜びの声。</summary>
         Cheer,
         /// <summary>不満のつぶやき。</summary>
-        Grumble
+        Grumble,
+        Slurp,
+        BicycleBell
     }
 
     /// <summary>店舗に重ねる循環環境音。</summary>
@@ -86,7 +88,9 @@ namespace MalatangStory.Game
         /// <summary>雨。</summary>
         Rain,
         /// <summary>街のざわめき（車の走行音・遠くの人声）。</summary>
-        Street
+        Street,
+        Birds,
+        Insects
     }
 
     /// <summary>進行状況に対応する五音音階の音楽。</summary>
@@ -103,7 +107,8 @@ namespace MalatangStory.Game
         /// <summary>しっとりした夜。</summary>
         Night,
         /// <summary>明るい営業報告。</summary>
-        Report
+        Report,
+        Evening
     }
 
     /// <summary>固定シードでモノラルPCMを作る、Unity APIに依存しない合成処理。</summary>
@@ -166,7 +171,7 @@ namespace MalatangStory.Game
         public static float[] Effect(Sfx id, int sampleRate)
         {
             ValidateRate(sampleRate);
-            ValidateId((int)id, (int)Sfx.Grumble + 1, nameof(id));
+            ValidateId((int)id, (int)Sfx.BicycleBell + 1, nameof(id));
             NoiseGenerator noise = new NoiseGenerator(0x13579BDFu + (uint)id * 7919u);
             float[] samples = new float[(int)Math.Ceiling(EffectDuration(id) * sampleRate)];
             switch (id)
@@ -262,6 +267,11 @@ namespace MalatangStory.Game
                         AddNoise(samples, sampleRate, noise.Index(samples.Length) / (double)sampleRate,
                             0.012, 2100, 10000, 0.2f, 0, false, ref noise);
                     break;
+                case Sfx.Slurp:
+                    AddNoise(samples, sampleRate, 0, .42, 450, 2800, .3f, 4, false, ref noise);
+                    AddTone(samples, sampleRate, .08, .18, 95, .08f, 2, false); break;
+                case Sfx.BicycleBell:
+                    AddMetal(samples, sampleRate, 0, .5, 2400, .3f); break;
                 case Sfx.Dishes:
                     for (int i = 0; i < 4; i++)
                         AddMetal(samples, sampleRate, i * 0.11, 0.3, 1350 + noise.Index(900), 0.28f);
@@ -320,7 +330,7 @@ namespace MalatangStory.Game
         public static float[] Ambient(AmbientLoop id, int sampleRate)
         {
             ValidateRate(sampleRate);
-            ValidateId((int)id, (int)AmbientLoop.Street + 1, nameof(id));
+            ValidateId((int)id, (int)AmbientLoop.Insects + 1, nameof(id));
             float[] samples = new float[sampleRate * 3];
             NoiseGenerator noise = new NoiseGenerator(0x2468ACE1u + (uint)id * 3571u);
             switch (id)
@@ -345,6 +355,14 @@ namespace MalatangStory.Game
                     for (int i = 0; i < 65; i++)
                         AddBubble(samples, sampleRate, noise.Index(samples.Length) / (double)sampleRate,
                             0.025, 1200 + noise.Index(1800), 0.07f, true);
+                    break;
+                case AmbientLoop.Birds:
+                    for (int chirp = 0; chirp < 6; chirp++)
+                        AddTone(samples, sampleRate, .2 + chirp * .37, .1, 1800 + chirp % 3 * 550, .08f, 8, true);
+                    break;
+                case AmbientLoop.Insects:
+                    for (int chirp = 0; chirp < 16; chirp++)
+                        AddTone(samples, sampleRate, chirp * .18, .075, 3400 + chirp % 2 * 600, .06f, 8, true);
                     break;
                 case AmbientLoop.Street:
                     AddNoise(samples, sampleRate, 0, 3, 40, 500, 0.3f, 0.4, true, ref noise);
@@ -418,6 +436,7 @@ namespace MalatangStory.Game
                 case MusicMood.Business: return new MusicSettings(65, 10, 96, 1, 0.075f, 0.10f);
                 case MusicMood.Busy: return new MusicSettings(67, 12, 120, 0.5, 0.05f, 0.12f);
                 case MusicMood.Night: return new MusicSettings(57, 8, 72, 2, 0.12f, 0.025f);
+                case MusicMood.Evening: return new MusicSettings(60, 8, 84, 1, .13f, .05f);
                 case MusicMood.Report: return new MusicSettings(62, 9, 100, 1, 0.095f, 0.085f);
                 default: throw new ArgumentOutOfRangeException(nameof(mood));
             }
@@ -461,6 +480,8 @@ namespace MalatangStory.Game
                 case Sfx.CardSwipe: return 0.48;
                 case Sfx.Voice: return 0.34;
                 case Sfx.Cheer: return 0.7;
+                case Sfx.Slurp: return .5;
+                case Sfx.BicycleBell: return .6;
                 case Sfx.Grumble: return 0.6;
                 default: throw new ArgumentOutOfRangeException(nameof(id));
             }
@@ -762,9 +783,9 @@ namespace MalatangStory.Game
     /// <summary>手続きクリップの所有、再生プール、環境音とBGMのフェードを管理する。</summary>
     public sealed class AudioDirector : MonoBehaviour
     {
-        private const int EffectCount = (int)Sfx.Grumble + 1;
-        private const int AmbientCount = (int)AmbientLoop.Street + 1;
-        private const int MusicCount = (int)MusicMood.Report + 1;
+        private const int EffectCount = (int)Sfx.BicycleBell + 1;
+        private const int AmbientCount = (int)AmbientLoop.Insects + 1;
+        private const int MusicCount = (int)MusicMood.Evening + 1;
         private const int PoolSize = 24;
         private const int EffectRate = 44100;
         private const int LoopRate = 22050;
@@ -859,6 +880,14 @@ namespace MalatangStory.Game
             float variance = Unit(pitchVariance);
             float pitch = 1f + (float)(pitchRandom.NextDouble() * 2 - 1) * variance;
             PlayEffect(index, transform.position, false, Unit(volume), Mathf.Max(0.1f, pitch));
+        }
+
+        public void PlayPitched(Sfx id, float pitch, float volume = 1f)
+        {
+            int index = CheckedIndex((int)id, EffectCount, nameof(id));
+            if (!isActiveAndEnabled || !float.IsFinite(pitch)) return;
+            Initialize();
+            PlayEffect(index, transform.position, false, Unit(volume), Mathf.Clamp(pitch, .6f, 1.6f));
         }
 
         /// <summary>指定ワールド位置で3D効果音を再生する。空間混合率は0.7。</summary>

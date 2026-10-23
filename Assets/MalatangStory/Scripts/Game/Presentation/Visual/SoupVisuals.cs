@@ -6,7 +6,7 @@ using UnityEngine;
 namespace MalatangStory.Game
 {
     /// <summary>有限個の共有テクスチャと、器ごとに所有する結合薬味メッシュを提供します。</summary>
-    public static class SoupVisuals
+    public static partial class SoupVisuals
     {
         private const int TextureSize = 256;
         private static readonly Dictionary<string, Texture2D> Textures = new Dictionary<string, Texture2D>(StringComparer.Ordinal);
@@ -173,22 +173,20 @@ namespace MalatangStory.Game
             Color oilBody = Color.Lerp(new Color(.64f, .31f, .025f), new Color(.52f, .055f, .008f), appearance.Spice / 5f);
             Color oilRim = new Color(.98f, .68f, .18f);
             bool mala = appearance.SoupId == "mala";
+            OilDroplet previous = default;
             for (int index = 0; index < appearance.OilDrops; index++)
             {
-                GarnishPlacement placement = SoupAppearance.Scatter(random, .84f);
-                float variation = (float)random.NextDouble();
-                float radius = mala
-                    ? (index % 9 == 0 ? .035f + variation * .014f : .009f + variation * .017f)
-                    : (index % 5 == 0 ? .072f + variation * .022f : .014f + variation * .03f);
-                radius *= 1f + appearance.Spice * .025f;
-                PaintOilDrop(pixels, placement.X, placement.Z, radius, oilBody, oilRim);
+                OilDroplet drop = OilDropletRules.Next(random, mala, appearance.Spice, previous, index > 0);
+                PaintOilDrop(pixels, drop.X, drop.Z, drop.Radius, oilBody, oilRim, drop.Aspect, drop.Angle);
+                previous = drop;
             }
         }
 
         /// <summary>濃い中心、明るい輪、偏った小反射を持つ一粒を合成します。</summary>
-        private static void PaintOilDrop(Color[] pixels, float centerX, float centerZ, float radius, Color body, Color rimColor)
+        private static void PaintOilDrop(Color[] pixels, float centerX, float centerZ, float radius, Color body, Color rimColor, float aspect = 1, float angle = 0)
         {
-            float extent = radius * 1.03f;
+            float extent = radius * Mathf.Max(aspect, 1 / aspect) * 1.03f;
+            float cos = Mathf.Cos(angle), sin = Mathf.Sin(angle);
             int left = PixelCoordinate(centerX - extent), right = PixelCoordinate(centerX + extent);
             int bottom = PixelCoordinate(centerZ - extent), top = PixelCoordinate(centerZ + extent);
             for (int y = bottom; y <= top; y++)
@@ -196,7 +194,9 @@ namespace MalatangStory.Game
                 {
                     float dx = (x / (float)(TextureSize - 1) * 2f - 1f - centerX) / radius;
                     float dz = (y / (float)(TextureSize - 1) * 2f - 1f - centerZ) / radius;
-                    float q = dx * dx + dz * dz;
+                    float ex = (dx * cos + dz * sin) / aspect;
+                    float ez = (-dx * sin + dz * cos) * aspect;
+                    float q = ex * ex + ez * ez;
                     if (q > 1.06f) continue;
                     float opacity = 1f - SmoothThreshold(.84f, 1.06f, q);
                     float rim = SmoothThreshold(.42f, .72f, q) * (1f - SmoothThreshold(.88f, 1.05f, q));
@@ -310,7 +310,7 @@ namespace MalatangStory.Game
         }
 
         /// <summary>定義色と形状に基づき、薬味一種類につき一つの描画バッチへ結合します。</summary>
-        public static Transform BuildGarnishes(Transform parent, List<string> condiments, int spice, int seed, float radius = .38f)
+        public static Transform BuildGarnishes(Transform parent, List<string> condiments, int spice, int seed, float radius = .38f, List<GarnishStroke> strokes = null)
         {
             if (condiments == null) throw new ArgumentNullException(nameof(condiments));
             if (float.IsNaN(radius) || float.IsInfinity(radius) || radius <= 0f) throw new ArgumentOutOfRangeException(nameof(radius));
@@ -335,7 +335,18 @@ namespace MalatangStory.Game
                 }
                 geometry.Flush(root, "Floating Garnish", false);
             }
+            if (strokes != null) foreach (var point in strokes) AppendPaintedStroke(root, point, radius);
             return root;
+        }
+
+        public static void AppendPaintedStroke(Transform parent, GarnishStroke point, float radius)
+        {
+            if (point == null || !float.IsFinite(point.x) || !float.IsFinite(point.z) || !Content.TryCondiment(point.id, out var condiment)) return;
+            Material material = MaterialLibrary.Lit(new Color(condiment.R, condiment.G, condiment.B), .7f);
+            bool oil = point.id == Content.ChiliOil;
+            Mesh mesh = oil ? MeshFactory.Torus(.024f, .003f, 12, 4) : MeshFactory.Sphere(5, 8);
+            StoreBuilder.Part("Painted " + point.id, mesh, material, new Vector3(point.x * radius * .9f, .003f, point.z * radius * .9f),
+                oil ? Vector3.one : new Vector3(.025f, .008f, .018f), parent, null, false);
         }
 
         /// <summary>ねぎの輪、香菜の葉、砕いた粒、液体の帯をそれぞれ専用形状で追加します。</summary>

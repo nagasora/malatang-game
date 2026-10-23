@@ -15,6 +15,109 @@ namespace MalatangStory.Tests
     /// <summary>実際の画面のボタン操作と店内の移動で、初日の営業から翌日までを通しで遊べることを保証する。</summary>
     public class GameplayTests
     {
+        [TestCase(1280, 720)]
+        [TestCase(720, 1280)]
+        [TestCase(1024, 768)]
+        public void SpeechStaysInTheSafeAreaAndAvoidsReservedPanels(int width, int height)
+        {
+            Rect area = new Rect(-width / 2f, -height / 2f, width, height);
+            Vector2 size = new Vector2(280, 70), pivot = new Vector2(.5f, 0);
+            var obstacles = new[] { new Rect(-width / 2f, height / 2f - 350, 460, 150), new Rect(width / 2f - 344, height / 2f - 312, 330, 112) };
+            Assert.IsTrue(OverlayLayout.TryPlace(area, size, pivot, new Vector2(-width, height), obstacles, out Vector2 placed));
+            Rect speech = new Rect(placed - Vector2.Scale(size, pivot), size);
+            Assert.IsTrue(area.Contains(speech.min)); Assert.IsTrue(area.Contains(speech.max));
+            foreach (var obstacle in obstacles) Assert.IsFalse(speech.Overlaps(obstacle));
+        }
+
+        [UnityTest]
+        public IEnumerator SeasonalParticlesAreRemovedInsideTheShopAndKeptOutside()
+        {
+            var root = new GameObject("Particle clipping regression");
+            try
+            {
+                var street = root.AddComponent<StreetLife>();
+                var cameraObject = new GameObject("Clipping camera"); cameraObject.transform.SetParent(root.transform);
+                var camera = cameraObject.AddComponent<Camera>(); camera.transform.position = new Vector3(0, 20, -20);
+                camera.transform.LookAt(new Vector3(0, 0, 2));
+                street.SetSeasonContext(camera, null);
+                street.SetSeason("spring", "sunny", true);
+                ParticleSystem particles = root.GetComponentInChildren<ParticleSystem>();
+                particles.Stop(true, ParticleSystemStopBehavior.StopEmittingAndClear);
+                var samples = new[]
+                {
+                    new ParticleSystem.Particle { position = new Vector3(0, 5, 2), remainingLifetime = 10, startLifetime = 10, startSize = .1f },
+                    new ParticleSystem.Particle { position = new Vector3(0, 10, -9), remainingLifetime = 10, startLifetime = 10, startSize = .1f },
+                    new ParticleSystem.Particle { position = new Vector3(10, 1, 2), remainingLifetime = 10, startLifetime = 10, startSize = .1f }
+                };
+                particles.SetParticles(samples, samples.Length);
+                yield return null;
+                int count = particles.GetParticles(samples);
+                for (int i = 0; i < count; i++)
+                    Assert.IsTrue(samples[i].remainingLifetime <= 0 || Mathf.Abs(samples[i].position.x) >= 7.1f);
+                Assert.IsTrue(samples.Take(count).Any(x => x.position.x > 9 && x.remainingLifetime > 0));
+            }
+            finally { UnityEngine.Object.Destroy(root); }
+            yield return null;
+        }
+
+        [UnityTest]
+        public IEnumerator LookTargetIgnoresDecorationInFrontOfAnInteractiveStation()
+        {
+            var root = new GameObject("Look selection regression");
+            try
+            {
+                var decoration = GameObject.CreatePrimitive(PrimitiveType.Cube); decoration.transform.SetParent(root.transform);
+                decoration.transform.position = new Vector3(1000, 2, 1001); decoration.transform.localScale = Vector3.one * .6f;
+                var station = new GameObject("Interactive Station"); station.transform.SetParent(root.transform);
+                station.transform.position = new Vector3(1000, 2, 1002); station.layer = RestaurantWorld.InteractionLayer;
+                station.AddComponent<BoxCollider>().size = Vector3.one * .7f;
+                var expected = station.AddComponent<WorldTarget>().Set(Station.Kitchen);
+                Physics.SyncTransforms(); yield return null;
+                Assert.AreSame(expected, RestaurantWorld.PickLookTarget(new Ray(new Vector3(1000, 2, 1000), Vector3.forward)));
+            }
+            finally { UnityEngine.Object.Destroy(root); }
+            yield return null;
+        }
+
+        [UnityTest]
+        public IEnumerator PlayerAndCustomerPassEachOtherInAnAisle()
+        {
+            string folder = Path.Combine(Path.GetTempPath(), "malatang-passing-" + Guid.NewGuid().ToString("N"));
+            Directory.CreateDirectory(folder); GameApplication.SavePathOverride = Path.Combine(folder, "save.json");
+            var go = new GameObject("Passing application");
+            var customer = new GameObject("Passing customer");
+            try
+            {
+                var app = go.AddComponent<GameApplication>(); yield return null;
+                app.NewGame(); app.Open(GameScreen.Store); app.Simulation.State.tutorialComplete = true;
+                yield return null;
+                var player = app.World.Player.GetComponent<NavMeshAgent>();
+                Assert.AreEqual(10, player.avoidancePriority);
+                Assert.IsTrue(player.Warp(new Vector3(-1.5f, 0, 0)));
+                var agent = customer.AddComponent<NavMeshAgent>(); AgentDirector.Configure(agent, 2.2f);
+                Assert.IsTrue(agent.Warp(new Vector3(1.5f, 0, 0)));
+                Assert.Greater(agent.avoidancePriority, player.avoidancePriority);
+                for (int side = -1; side <= 1; side += 2)
+                {
+                    var obstacleObject = new GameObject("Aisle side"); obstacleObject.transform.SetParent(go.transform);
+                    obstacleObject.transform.position = new Vector3(0, .6f, side * 1.15f);
+                    var obstacle = obstacleObject.AddComponent<NavMeshObstacle>(); obstacle.shape = NavMeshObstacleShape.Box;
+                    obstacle.size = new Vector3(4, 1.2f, .7f); obstacle.carving = true;
+                }
+                yield return new WaitForSeconds(.6f);
+                agent.SetDestination(new Vector3(-1.5f, 0, 0));
+                Assert.IsTrue(app.World.WalkTo(new Vector3(1.5f, 0, 0)));
+                float deadline = Time.realtimeSinceStartup + 6;
+                while ((player.transform.position.x < 1.2f || agent.transform.position.x > -1.2f) && Time.realtimeSinceStartup < deadline) yield return null;
+                Assert.Greater(player.transform.position.x, 1.2f); Assert.Less(agent.transform.position.x, -1.2f);
+            }
+            finally
+            {
+                UnityEngine.Object.Destroy(customer); UnityEngine.Object.Destroy(go); GameApplication.SavePathOverride = null;
+            }
+            yield return null; Directory.Delete(folder, true);
+        }
+
         private static Button FindButton(string name)
             => UnityEngine.Object.FindObjectsByType<Button>(FindObjectsSortMode.None).FirstOrDefault(x => x.gameObject.activeInHierarchy && x.name == name);
 

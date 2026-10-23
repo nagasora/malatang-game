@@ -1,1 +1,1 @@
-{"name":"MalatangStory.Editor","references":["MalatangStory.Game","MalatangStory.Ingredients","Unity.RenderPipelines.Universal.Runtime"],"includePlatforms":["Editor"]}
+{"name": "MalatangStory.Editor", "references": ["MalatangStory.Game", "MalatangStory.Ingredients", "Unity.RenderPipelines.Universal.Runtime", "Unity.RenderPipelines.Core.Runtime"], "includePlatforms": ["Editor"]}

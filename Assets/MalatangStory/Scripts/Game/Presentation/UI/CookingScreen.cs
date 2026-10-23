@@ -36,7 +36,9 @@ namespace MalatangStory.Game
         private RectTransform resultOverview;
         private RawImage resultPortrait;
         private Text resultStars, resultRecipe, resultPairings;
-        private float resultWidth = -1f;
+        private float resultWidth = -1f, resultReveal;
+        private int shownResultScore = -1;
+        private Text resultRare;
 
         public override bool ShowHud => true;
 
@@ -99,7 +101,7 @@ namespace MalatangStory.Game
 
         private void BuildTicket(CustomerOrder o)
         {
-            var name = UIKit.Label(ticket, o.customerName + "　<size=15><color=#8a6a55>" + o.type + (o.takeout ? "・持ち帰り" : "") + "</color></size>", 22, UIKit.Lacquer, TextAnchor.MiddleLeft, true);
+            var name = UIKit.Label(ticket, o.customerName + "　" + o.type + (o.takeout ? "・持ち帰り" : "") + "", 22, UIKit.Lacquer, TextAnchor.MiddleLeft, true);
             UIKit.Place(name.rectTransform, new Vector2(0, 1), new Vector2(0, 0), new Vector2(320, 36));
             var chips = UIKit.Rect("Request", ticket);
             chips.gameObject.SetActive(o.stage != OrderStage.Ready);
@@ -473,7 +475,7 @@ namespace MalatangStory.Game
                 string id = condiment.Id;
                 bool wanted = o.requestedCondiments.Contains(id), disliked = o.dislikedCondiments.Contains(id);
                 var b = UIKit.Button(condRow, condiment.Name, () => Sim.AddCondiment(o.id, id), wanted ? ButtonStyle.Gold : ButtonStyle.Tab, 13);
-                if (disliked) b.GetComponentInChildren<Text>().text = condiment.Name + "\n<size=10><color=#b02a1e>抜きで</color></size>";
+                if (disliked) b.GetComponentInChildren<Text>().text = condiment.Name + "\n抜きで";
                 var count = UIKit.Label(b.transform, "", 13, UIKit.Lacquer, TextAnchor.UpperRight, true);
                 UIKit.Fill(count.rectTransform, 2, 5, 1, 2);
                 condimentCounts.Add((id, count));
@@ -516,6 +518,8 @@ namespace MalatangStory.Game
             portrait.texture = BowlPortrait.Get(o);
             portrait.raycastTarget = false;
             resultPortrait = portrait;
+            var photo = UIKit.Button(overview, "撮影", () => App.BeginPhoto(true), ButtonStyle.Secondary, 17, IconKind.Camera);
+            UIKit.Place(photo.GetComponent<RectTransform>(), new Vector2(1, 1), new Vector2(-8, -8), new Vector2(96, 42));
             RecipeDefinition recipe = Recipes.Find(o.recipe);
             Text recipeLabel = UIKit.Label(overview, recipe == null ? "隠しレシピ：なし" : recipe.Name, 18, recipe == null ? UIKit.InkSoft : UIKit.Lacquer, TextAnchor.UpperLeft, true, "Recipe");
             resultRecipe = recipeLabel;
@@ -526,6 +530,16 @@ namespace MalatangStory.Game
             var stars = UIKit.Label(overview, UIKit.Stars(o.quality) + "  " + o.quality.ToString("0") + "点", 23, UIKit.Gold, TextAnchor.MiddleCenter, true);
             UIKit.Outlined(stars, new Color(.4f, .2f, .05f, .5f), 1.2f);
             resultStars = stars;
+            resultReveal = 0; shownResultScore = -1;
+            bool rare = o.selected.Any(MorningMarket.RareIds.Contains);
+            resultRare = rare ? UIKit.Label(overview, "希少食材の特別な一杯", 16, UIKit.Lacquer, TextAnchor.MiddleLeft, true, "Rare Badge") : null;
+            if (o.quality >= 80)
+            {
+                var stamp = UIKit.Label(overview, "お見事", 28, UIKit.Lacquer, TextAnchor.MiddleCenter, true, "Finish Stamp");
+                UIKit.Place(stamp.rectTransform, new Vector2(1, 1), new Vector2(-8, -12), new Vector2(120, 54));
+                stamp.rectTransform.localRotation = Quaternion.Euler(0, 0, -13);
+                stamp.gameObject.AddComponent<PopIn>().Delay = .7f;
+            }
             LayoutResultOverview();
             metrics = UIKit.Rect("Quality Details", list);
             UIKit.Height(metrics, 186);
@@ -544,6 +558,11 @@ namespace MalatangStory.Game
             }
             var comment = UIKit.Label(list, "「" + string.Join(" ", r.comments) + "」", 16, UIKit.InkSoft, TextAnchor.UpperLeft);
             UIKit.Height(comment, 84);
+            if (Sim.CanOfferApology(o))
+            {
+                var apology = UIKit.Button(list, "謝罪のおまけ・コンボを少し回復（食材1個）", () => Sim.OfferApologySide(o.id), ButtonStyle.Secondary, 17, IconKind.Heart);
+                UIKit.Height(apology, 46);
+            }
             var signature = UIKit.Button(content, "名物メニューに登録", () => Sim.RegisterSignature(o.id, ""), ButtonStyle.Gold, 17, IconKind.Star, o.quality >= 75 && S.signatures.Count < 3 && string.IsNullOrEmpty(o.signatureId));
             var srt = signature.GetComponent<RectTransform>();
             srt.anchorMin = new Vector2(0, 0); srt.anchorMax = new Vector2(1, 0); srt.pivot = new Vector2(.5f, 0); srt.offsetMin = new Vector2(0, 66); srt.offsetMax = new Vector2(0, 112);
@@ -559,10 +578,11 @@ namespace MalatangStory.Game
             resultWidth = width;
             float size = width;
             UIKit.Place(resultPortrait.rectTransform, new Vector2(.5f, 1f), Vector2.zero, new Vector2(size, size));
-            UIKit.Height(resultOverview, size + 152f);
+            UIKit.Height(resultOverview, size + (resultRare != null ? 184f : 152f));
             PlaceResultText(resultStars.rectTransform, 0f, size, 38f);
             PlaceResultText(resultRecipe.rectTransform, 0f, size + 42f, 36f);
             PlaceResultText(resultPairings.rectTransform, 0f, size + 82f, 66f);
+            if (resultRare != null) PlaceResultText(resultRare.rectTransform, 0, size + 150, 30);
         }
 
         /// <summary>完成概要の文字領域を、残りの横幅いっぱいに収めます。</summary>
@@ -601,14 +621,24 @@ namespace MalatangStory.Game
         {
             var o = Order;
             if (o == null) return;
-            if (o.stage == OrderStage.Ready) LayoutResultOverview();
+            if (o.stage == OrderStage.Ready)
+            {
+                LayoutResultOverview();
+                resultReveal = S.reducedMotion ? 2 : resultReveal + deltaTime;
+                int score = Mathf.RoundToInt(o.quality * Mathf.SmoothStep(0, 1, resultReveal / .8f));
+                if (resultStars != null && score != shownResultScore) { shownResultScore = score; resultStars.text = UIKit.Stars(score) + "  " + score + "点"; }
+                if (resultRecipe != null) resultRecipe.gameObject.SetActive(resultReveal >= .35f);
+                if (resultPairings != null) resultPairings.gameObject.SetActive(resultReveal >= .7f);
+                if (resultRare != null) resultRare.gameObject.SetActive(resultReveal >= 1.05f);
+            }
             if (weighLabel != null) weighLabel.text = o.omakase
                 ? o.selected.Count + "品　" + Sim.Grams(o).ToString("0") + "g ／ 目安" + o.targetGrams.ToString("0") + "g（予算 " + RestaurantSimulation.Money(o.budgetFen) + " 受領済み）"
                 : o.selected.Count + "品　" + Sim.Grams(o).ToString("0") + "g　→　" + RestaurantSimulation.Money(Sim.PriceFor(o));
             if (timerLabel != null)
             {
+                bool expert = S.tutorialComplete && S.gaugeMode == 2;
                 float left = Sim.SecondsUntilDone(o);
-                timerLabel.text = left > 0 ? "全部茹で上がるまで 約" + Mathf.CeilToInt(left) + "秒" : "茹で上がり！引き上げましょう";
+                timerLabel.text = expert ? "色・泡・湯気を見て判断しましょう" : left > 0 ? "全部茹で上がるまで 約" + Mathf.CeilToInt(left) + "秒" : "茹で上がり！引き上げましょう";
                 timerLabel.color = left > 0 ? UIKit.Ink : UIKit.Good;
                 boilWarning.gameObject.SetActive(o.boiledOver);
             }
@@ -616,15 +646,22 @@ namespace MalatangStory.Game
             {
                 if (fill == null || marker == null || hint == null || index >= o.selected.Count || index >= o.dropTimes.Count) continue;
                 float ratio = Sim.Doneness(o, index);
+                bool numbers = !S.tutorialComplete || S.gaugeMode == 0;
+                fill.transform.parent.gameObject.SetActive(numbers);
+                if (S.tutorialComplete && S.gaugeMode == 2)
+                {
+                    hint.text = o.dropTimes[index] < 0 ? "投入待ち" : "鍋を見て判断";
+                    continue;
+                }
                 fill.rectTransform.anchorMax = new Vector2(Mathf.Clamp01(ratio / 1.8f), 1);
                 marker.anchorMin = new Vector2(Mathf.Clamp01(ratio / 1.8f), -.2f); marker.anchorMax = new Vector2(Mathf.Clamp01(ratio / 1.8f), 1.2f);
                 if (o.dropTimes[index] < 0)
                 {
                     float wait = RecommendedDrop(o, index) - o.heatSeconds;
-                    hint.text = wait <= .5f ? "<color=#c0392b><b>今！</b></color>" : "あと" + Mathf.CeilToInt(wait / Sim.CookSpeedMultiplier) + "秒で投入";
+                    hint.text = wait <= .5f ? "今！" : "あと" + Mathf.CeilToInt(wait / Sim.CookSpeedMultiplier) + "秒で投入";
                     if (drop != null) drop.transform.localScale = Vector3.one * (wait <= .5f ? 1 + Mathf.Sin(Time.unscaledTime * 10) * .06f : 1);
                 }
-                else hint.text = ratio < QualityEvaluator.PerfectDonenessMin ? "茹で中" : ratio <= QualityEvaluator.PerfectDonenessMax ? "<color=#2e8b47><b>食べごろ</b></color>" : "<color=#c0392b>煮えすぎ</color>";
+                else hint.text = ratio < QualityEvaluator.PerfectDonenessMin ? "○ 茹で中" : ratio <= QualityEvaluator.PerfectDonenessMax ? "✓ 食べごろ" : "！ 煮えすぎ";
             }
             if (shakeButton != null) shakeButton.interactable = o.stage == OrderStage.Drained;
             if (shakeLabel != null)

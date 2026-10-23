@@ -33,6 +33,21 @@ namespace MalatangStory.Game
             sim.TutorialAction(RestaurantSimulation.Tutorial.Move);
             yield return new WaitForSeconds(2);
             yield return Capture("03-store");
+            App.Paused = true;
+            string originalName = sim.State.storeName;
+            sim.RenameStore("<size=300>麻辣のお店");
+            App.Open(GameScreen.Title);
+            yield return new WaitForSeconds(1);
+            yield return Capture("03c-safe-store-name");
+            sim.RenameStore(originalName);
+            App.Open(GameScreen.Store); App.Paused = true;
+            App.UI.Toast("ご注文の準備ができました。", seconds: 25);
+            App.UI.Toast("通路を空けてお待ちください。", seconds: 25);
+            App.UI.Toast("この通知は前の通知の後に表示します。", seconds: 25);
+            App.UI.Speech("overlay-regression", () => App.World.Player.position + Vector3.up * 1.8f, "おいしい一杯を楽しみにしています。", 25);
+            yield return CaptureLayouts("03d-overlay-regression");
+            App.Paused = false;
+            yield return CaptureMovement();
             var order = sim.Active.Single();
             App.OpenRegister(order.id);
             yield return new WaitForSeconds(6);
@@ -76,7 +91,21 @@ namespace MalatangStory.Game
             {
                 for (int i = 0; i < order.selected.Count; i++)
                     if (order.dropTimes[i] < 0 && order.heatSeconds >= slowest - sim.Catalog.Get(order.selected[i]).cookingSeconds) sim.DropIngredient(order.id, i);
-                if (guard == 30) yield return Capture("05-cooking-boil");
+                if (guard == 30)
+                {
+                    yield return Capture("05-cooking-boil");
+                    App.Paused = true; bool tutorialComplete = sim.State.tutorialComplete;
+                    try
+                    {
+                        sim.State.tutorialComplete = true;
+                        for (int gauge = 1; gauge <= 2; gauge++)
+                        {
+                            sim.State.gaugeMode = gauge; App.UI.Refresh(); yield return new WaitForSeconds(.2f);
+                            yield return Capture("05b-cooking-gauge-" + gauge);
+                        }
+                    }
+                    finally { sim.State.tutorialComplete = tutorialComplete; sim.State.gaugeMode = 0; App.Paused = false; App.UI.Refresh(); }
+                }
                 sim.Tick(.25f);
                 if (guard % 8 == 0) yield return null;
             }
@@ -183,7 +212,13 @@ namespace MalatangStory.Game
                         if (fp) App.World.SetFirstPerson(true);
                         sim.State.highQuality = true; App.ApplySettings();
                         App.Paused = false; App.DevelopmentSpeed = 2;
-                        if (day == 2) yield return MeasurePerformance(sim);
+                        if (day == 2)
+                        {
+                            yield return MeasurePerformance(sim);
+                            sim.State.highQuality = false; App.ApplySettings();
+                            yield return MeasurePerformance(sim);
+                            sim.State.highQuality = true; App.ApplySettings();
+                        }
                         float until = Time.realtimeSinceStartup + (day == 2 ? 12 : 22);
                         while (Time.realtimeSinceStartup < until && sim.State.phase != DayPhase.Report)
                         {
@@ -252,9 +287,126 @@ namespace MalatangStory.Game
             App.Save();
             var saved = App.Saves.Load();
             if (saved == null || saved.day != 5) throw new Exception("Smoke: save failed.");
+            yield return CaptureNewFeatures(sim);
             File.WriteAllText(Path.Combine(Output, "smoke-result.json"), "{\"result\":\"passed\",\"reachedDay\":5,\"shopLevel\":" + sim.State.shopLevel + ",\"served\":" + sim.State.stats.served + ",\"unlockedIngredients\":" + sim.Unlocks.Available.Count() + "}");
             Debug.Log("MALATANG_PLAYER_SMOKE_SUCCESS");
             Application.Quit(0);
+        }
+
+        private IEnumerator CaptureNewFeatures(RestaurantSimulation campaign)
+        {
+            campaign.State.shopLevel = Math.Max(8, campaign.State.shopLevel); campaign.State.moneyFen += 2000000;
+            if (!campaign.BeginPreparation("mala", 3, 2, 1)) throw new Exception("Smoke: preparation start failed");
+            campaign.TickPreparation(.5f); campaign.ChopPreparation();
+            for (int i = 0; i < 8; i++) { campaign.TickPreparation(1); campaign.ChopPreparation(); }
+            App.Open(GameScreen.Preparation); yield return Capture("30-preparation");
+            if (!campaign.FinishPreparation() || !campaign.RecordHouseSoup("朝の香りスープ")) throw new Exception("Smoke: house soup failed");
+            App.Open(GameScreen.Preparation); yield return Capture("30b-house-soup"); yield return CaptureLayouts("30b-house-soup");
+            if (!campaign.HireStaff(StaffRole.Server) || !campaign.HireStaff(StaffRole.Server)) throw new Exception("Smoke: multiple staff failed");
+            var first = campaign.State.staff.First(x => x.role == StaffRole.Server);
+            var second = campaign.State.staff.Last(x => x.role == StaffRole.Server);
+            campaign.TrainStaff(first.id); campaign.PraiseStaff(first.id); campaign.RestStaff(second.id, true);
+            ManagementScreen.tab = 3; App.Open(GameScreen.Management);
+            yield return Capture("31-staff"); yield return CaptureLayouts("31-staff"); ManagementScreen.tab = 0;
+            App.Save();
+            var before = App.Saves.Load();
+            App.Open(GameScreen.Challenges); yield return Capture("32-challenges"); yield return CaptureLayouts("32-challenges");
+            App.StartChallenge(ChallengeRules.Rush, new DateTime(2026, 10, 23, 0, 0, 0, DateTimeKind.Utc));
+            if (!App.InChallenge || !App.Simulation.BeginDay()) throw new Exception("Smoke: challenge start failed");
+            App.Open(GameScreen.Store); yield return Capture("32b-rush");
+            var challenge = App.Simulation;
+            int guard = 0;
+            while (challenge.State.phase != DayPhase.Report && guard++ < 2000)
+            {
+                challenge.Tick(1);
+                foreach (int table in challenge.State.dirtyTables.ToArray()) challenge.ClearTable(table);
+                foreach (var order in challenge.Active.ToArray()) AutoCook(challenge, order);
+                if (guard % 30 == 0) yield return null;
+            }
+            if (challenge.State.phase != DayPhase.Report) throw new Exception("Smoke: challenge did not finish");
+            App.Open(GameScreen.Report); yield return new WaitForSeconds(1.5f); yield return Capture("32c-rush-result");
+            App.LeaveChallenge();
+            var after = App.Saves.Load();
+            if (after == null || after.day != before.day || after.moneyFen != before.moneyFen || after.stats.served != before.stats.served || after.challengeRecords.Count != before.challengeRecords.Count + 1)
+                throw new Exception("Smoke: challenge changed campaign progress or failed to record");
+            App.Open(GameScreen.Challenges); yield return Capture("32d-personal-best");
+            yield return CaptureBusinessAndPhoto();
+        }
+
+        private IEnumerator CaptureBusinessAndPhoto()
+        {
+            App.Continue();
+            App.SuspendSaving = true;
+            try
+            {
+                var sim = App.Simulation; var state = sim.State;
+                state.day = 10; state.dailyEvent = "festival"; state.phase = DayPhase.Preparation;
+                state.moneyFen = 4000000; state.shopLevel = 8;
+                App.Open(GameScreen.Neighbourhood); yield return Capture("33-neighbourhood");
+                if (!sim.SetFestivalStall(true) || !sim.BeginDay()) throw new Exception("Smoke: festival stall failed");
+                App.Open(GameScreen.Stall); yield return Capture("33b-festival-stall"); yield return CaptureLayouts("33b-festival-stall");
+                for (int i = 0; i < 65; i++)
+                {
+                    sim.Tick(1); foreach (var order in sim.Active.ToArray()) AutoCook(sim, order);
+                    if (i % 10 == 0) yield return null;
+                }
+                yield return Capture("33c-stall-service");
+                state.phase = DayPhase.Preparation; state.orders.Clear(); state.festivalStall = false;
+                if (!sim.HireStaff(StaffRole.Courier) || !sim.SetDeliveryEnabled(true)) throw new Exception("Smoke: courier failed");
+                var delivery = new CustomerOrder { id = "smoke-delivery", customerName = "出前・試食さん", type = "会社員", delivery = true, takeout = true, stage = OrderStage.Ready, chosenSoup = "mala", soupMl = 340, quality = 94, paidFen = 3000, bowlStyle = "paper",
+                    selected = new System.Collections.Generic.List<string> { "enoki", "bok_choy", "beef_slice" } };
+                delivery.report.total = 94; state.orders.Add(delivery); state.phase = DayPhase.Open;
+                if (!sim.Serve(delivery.id)) throw new Exception("Smoke: dispatch failed");
+                sim.Tick(8); App.Open(GameScreen.Store); yield return Capture("34-delivery");
+                var scooter = GameObject.Find("Delivery Scooter");
+                if (scooter == null) throw new Exception("Smoke: missing visible delivery scooter");
+                yield return CaptureObject("34b-delivery-scooter", scooter.transform, new Vector3(2, 1.4f, -3));
+                state.phase = DayPhase.Preparation; state.orders.Clear();
+                if (!sim.ScheduleRivalCookoff() || !sim.BeginDay()) throw new Exception("Smoke: rival cookoff failed");
+                for (int guard = 0; state.phase != DayPhase.Report && guard < 1800; guard++)
+                {
+                    sim.Tick(1); foreach (int table in state.dirtyTables.ToArray()) sim.ClearTable(table);
+                    foreach (var order in sim.Active.ToArray()) AutoCook(sim, order);
+                    if (guard % 30 == 0) yield return null;
+                }
+                if (state.phase != DayPhase.Report || state.rivalResolvedDay != state.day) throw new Exception("Smoke: rival result failed");
+                App.Open(GameScreen.Report); yield return new WaitForSeconds(1.5f); yield return Capture("35-rival-result");
+                state.ingredients.unlockedIds = App.Catalog.ingredients.Where(x => !x.isRare).Select(x => x.id).ToList();
+                state.ingredients.rareObtainedIds = App.Catalog.ingredients.Where(x => x.isRare).Select(x => x.id).ToList();
+                foreach (string reward in new[] { "apron", "bowl", "pennant", "title" }) sim.ChooseCollectionReward(reward, true);
+                App.World.PreviewChef(state.chef); App.World.SetCollectorPennant(true);
+                CollectionScreen.StartTab = 8; App.Open(GameScreen.Collection); yield return Capture("36-collection-rewards"); yield return CaptureLayouts("36-collection-rewards");
+                CollectionScreen.StartTab = 0;
+                var photoOrder = new CustomerOrder { id = "smoke-photo", customerName = "撮影用の一杯", type = "会社員", stage = OrderStage.Ready, chosenSoup = "mala", soupMl = 340, quality = 96, bowlStyle = "jade",
+                    selected = new System.Collections.Generic.List<string> { "enoki", "bok_choy", "beef_slice", "rice_noodle" } };
+                photoOrder.report.total = 96; state.orders.Add(photoOrder); App.SelectedOrderId = photoOrder.id;
+                App.Open(GameScreen.Cooking); yield return Capture("36b-reward-bowl");
+                App.BeginPhoto(true); yield return new WaitForSeconds(.6f); yield return Capture("37-photo-mode");
+                PhotoExportService.OutputDirectoryOverride = Path.Combine(Output, "Photos");
+                FindObjectsByType<Button>(FindObjectsSortMode.None).First(x => x.gameObject.activeInHierarchy && x.GetComponentInChildren<Text>()?.text == "スタンプ切替").onClick.Invoke();
+                FindObjectsByType<Button>(FindObjectsSortMode.None).First(x => x.gameObject.activeInHierarchy && x.GetComponentInChildren<Text>()?.text == "フィルター：なし").onClick.Invoke();
+                FindObjectsByType<Button>(FindObjectsSortMode.None).First(x => x.gameObject.activeInHierarchy && x.GetComponentInChildren<Text>()?.text == "PNGに保存").onClick.Invoke();
+                for (int guard = 0; (!Directory.Exists(PhotoExportService.OutputDirectoryOverride) || Directory.GetFiles(PhotoExportService.OutputDirectoryOverride, "*.png").Length == 0) && guard < 120; guard++) yield return null;
+                if (!Directory.Exists(PhotoExportService.OutputDirectoryOverride) || Directory.GetFiles(PhotoExportService.OutputDirectoryOverride, "*.png").Length == 0) throw new Exception("Smoke: photo export failed");
+                yield return Capture("37b-photo-saved");
+                File.WriteAllText(Path.Combine(Output, "business-proof.json"), "{\"festival\":true,\"delivery\":true,\"rivalResolved\":true,\"photoPng\":true,\"iosNativeVerified\":false}");
+            }
+            finally
+            {
+                PhotoExportService.OutputDirectoryOverride = null; App.SuspendSaving = false; App.Continue();
+            }
+        }
+        private IEnumerator CaptureObject(string name, Transform target, Vector3 offset)
+        {
+            var cameraObject = new GameObject("Verification Camera"); var camera = cameraObject.AddComponent<Camera>();
+            var canvas = App.UI.GetComponentInChildren<Canvas>(); bool visible = canvas.enabled;
+            try
+            {
+                camera.depth = 100; camera.fieldOfView = 34; camera.nearClipPlane = .03f;
+                camera.transform.position = target.position + offset; camera.transform.LookAt(target.position + Vector3.up * .7f);
+                canvas.enabled = false; yield return null; yield return Capture(name);
+            }
+            finally { canvas.enabled = visible; Destroy(cameraObject); }
         }
 
         /// <summary>実際の客席に専用カメラを向け、食事中または片付け前の器を撮影します。</summary>
@@ -450,7 +602,16 @@ namespace MalatangStory.Game
             yield return null;
             double start = Time.realtimeSinceStartupAsDouble, previous = start, nextCook = start;
             double sum = 0, maximum = 0;
-            int frames = 0;
+            int frames = 0, timingSamples = 0;
+            double cpuFrame = 0, gpuFrame = 0;
+            var timing = new FrameTiming[1];
+            var process = System.Diagnostics.Process.GetCurrentProcess();
+            double cpuStart = process.TotalProcessorTime.TotalMilliseconds;
+            long probeBefore = GC.GetAllocatedBytesForCurrentThread();
+            var allocationProbe = new byte[128]; GC.KeepAlive(allocationProbe);
+            bool allocationCounterSupported = GC.GetAllocatedBytesForCurrentThread() > probeBefore;
+            long allocatedStart = GC.GetAllocatedBytesForCurrentThread();
+            var intervals = new double[10000]; int intervalCount = 0, hitches = 0;
             while (previous - start < 10)
             {
                 if (previous >= nextCook)
@@ -459,10 +620,17 @@ namespace MalatangStory.Game
                     foreach (CustomerOrder order in sim.Active.ToArray()) AutoCook(sim, order);
                     nextCook = previous + .4;
                 }
+                FrameTimingManager.CaptureFrameTimings();
                 yield return null;
+                if (FrameTimingManager.GetLatestTimings(1, timing) > 0)
+                {
+                    cpuFrame += timing[0].cpuFrameTime; gpuFrame += timing[0].gpuFrameTime; timingSamples++;
+                }
                 double now = Time.realtimeSinceStartupAsDouble;
                 double elapsed = (now - previous) * 1000;
                 sum += elapsed; maximum = Math.Max(maximum, elapsed); frames++;
+                if (intervalCount < intervals.Length) intervals[intervalCount++] = elapsed;
+                if (elapsed > 50) hitches++;
                 previous = now;
             }
             int renderers = 0;
@@ -476,13 +644,21 @@ namespace MalatangStory.Game
                 for (int submesh = 0; submesh < mesh.subMeshCount; submesh++)
                     if (mesh.GetTopology(submesh) == MeshTopology.Triangles) triangles += mesh.GetIndexCount(submesh) / 3;
             }
+            Array.Sort(intervals, 0, intervalCount);
             var result = new PerformanceResult
             {
                 highQuality = sim.State.highQuality, durationSeconds = previous - start, frames = frames,
                 averageFrameMs = frames > 0 ? sum / frames : 0, maximumFrameMs = maximum,
                 meshRenderers = renderers, totalTriangles = triangles,
+                timingSamples = timingSamples, cpuFrameMs = timingSamples > 0 ? cpuFrame / timingSamples : 0,
+                gpuFrameMs = timingSamples > 0 ? gpuFrame / timingSamples : 0,
+                processCpuMsPerFrame = frames > 0 ? (process.TotalProcessorTime.TotalMilliseconds - cpuStart) / frames : 0,
+                allocationCounterSupported = allocationCounterSupported,
+                percentile95Ms = intervalCount > 0 ? intervals[(int)((intervalCount - 1) * .95)] : 0,
+                percentile99Ms = intervalCount > 0 ? intervals[(int)((intervalCount - 1) * .99)] : 0, hitchesOver50Ms = hitches,
+                mainThreadBytesPerFrame = allocationCounterSupported && frames > 0 ? (GC.GetAllocatedBytesForCurrentThread() - allocatedStart) / frames : -1,
             };
-            File.WriteAllText(Path.Combine(Output, "perf.json"), JsonUtility.ToJson(result, true));
+            File.WriteAllText(Path.Combine(Output, sim.State.highQuality ? "perf.json" : "perf-low.json"), JsonUtility.ToJson(result, true));
             Debug.Log("MALATANG_PERF " + JsonUtility.ToJson(result));
         }
 
@@ -494,6 +670,10 @@ namespace MalatangStory.Game
             public double durationSeconds, averageFrameMs, maximumFrameMs;
             public int frames, meshRenderers;
             public long totalTriangles;
+            public int timingSamples, hitchesOver50Ms;
+            public bool allocationCounterSupported;
+            public double percentile95Ms, percentile99Ms;
+            public double cpuFrameMs, gpuFrameMs, processCpuMsPerFrame, mainThreadBytesPerFrame;
         }
 
         /// <summary>注文の具材（おまかせはスタッフと同じ自動選択）。</summary>
@@ -581,6 +761,22 @@ namespace MalatangStory.Game
             Destroy(root);
         }
 
+        private IEnumerator CaptureMovement()
+        {
+            Vector3 original = App.World.Player.position;
+            var agent = App.World.Player.GetComponent<UnityEngine.AI.NavMeshAgent>();
+            try
+            {
+                yield return Capture("03e-movement-0");
+                App.World.TouchMovement = new Vector2(0, 1);
+                yield return new WaitForSeconds(.06f); yield return Capture("03e-movement-1");
+                yield return new WaitForSeconds(.06f); yield return Capture("03e-movement-2");
+                App.World.TouchMovement = Vector2.zero;
+                yield return new WaitForSeconds(.1f); yield return Capture("03e-movement-3");
+            }
+            finally { App.World.TouchMovement = Vector2.zero; agent.Warp(original); }
+        }
+
         /// <summary>タブレットと携帯の縦横比で撮影し、元のウィンドウ寸法へ戻す。</summary>
         private IEnumerator CaptureLayouts(string name)
         {
@@ -601,6 +797,8 @@ namespace MalatangStory.Game
         /// <summary>描画が完了した画面をPNGファイルに保存する。</summary>
         private IEnumerator Capture(string name)
         {
+            // 出入りのアニメーション中を最終画面と誤認しないよう、切り替えとカメラが落ち着いてから撮る。
+            yield return new WaitForSecondsRealtime(.6f);
             yield return new WaitForEndOfFrame();
             // モバイルでは CaptureScreenshot のパスが保存領域からの相対になるため、テクスチャ経由で書き出す。
             var texture = ScreenCapture.CaptureScreenshotAsTexture();

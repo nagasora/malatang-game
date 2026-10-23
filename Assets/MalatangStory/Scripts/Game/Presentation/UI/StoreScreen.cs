@@ -50,6 +50,7 @@ namespace MalatangStory.Game
             UIKit.Button(row, "経営", () => App.Open(GameScreen.Management), ButtonStyle.Secondary, 18, IconKind.Chart);
             buildButton = UIKit.Button(row, "内装", () => App.Open(GameScreen.Build), ButtonStyle.Secondary, 18, IconKind.Hammer);
             UIKit.Button(row, "図鑑", () => App.Open(GameScreen.Collection), ButtonStyle.Secondary, 18, IconKind.Book);
+            UIKit.Button(row, "写真", () => App.BeginPhoto(false), ButtonStyle.Secondary, 18, IconKind.Camera);
             UIKit.Button(row, "厨房", () => App.World.Visit(Station.Kitchen, () => App.Interact(Station.Kitchen)), ButtonStyle.Primary, 18, IconKind.Pot);
 
             crosshair = UIKit.Rect("Crosshair", root);
@@ -83,14 +84,14 @@ namespace MalatangStory.Game
 
             var stick = UIKit.Panel(root, new Color(.1f, .07f, .05f, .35f), 70, false, "Virtual Joystick");
             stick.sprite = TextureFactory.Circle(128); stick.type = Image.Type.Simple;
-            var srt = UIKit.Place(stick.rectTransform, new Vector2(0, 0), new Vector2(34, 30), new Vector2(150, 150));
+            var srt = UIKit.Place(stick.rectTransform, new Vector2(S.leftHanded ? 1 : 0, 0), new Vector2(S.leftHanded ? -34 : 34, 30), new Vector2(150, 150));
             var thumb = UIKit.Panel(srt, new Color(1, .95f, .85f, .9f), 30, false, "Thumb");
             thumb.sprite = TextureFactory.Circle(128); thumb.type = Image.Type.Simple; thumb.raycastTarget = false;
             var trt = thumb.rectTransform; trt.anchorMin = trt.anchorMax = trt.pivot = new Vector2(.5f, .5f); trt.sizeDelta = new Vector2(62, 62);
             var joystick = stick.gameObject.AddComponent<VirtualJoystick>(); joystick.World = App.World; joystick.Thumb = trt;
 
             contextButton = UIKit.Button(root, "", () => { var near = App.World.NearestStation(out int target); if (near.HasValue) App.Interact(near.Value, target); }, ButtonStyle.Primary, 22, IconKind.Info, true, "Context");
-            var crt = UIKit.Place(contextButton.GetComponent<RectTransform>(), new Vector2(1, 0), new Vector2(-30, 30), new Vector2(120, 120));
+            var crt = UIKit.Place(contextButton.GetComponent<RectTransform>(), new Vector2(S.leftHanded ? 0 : 1, 0), new Vector2(S.leftHanded ? 30 : -30, 30), new Vector2(120, 120));
             contextButton.GetComponent<Image>().sprite = TextureFactory.Circle(128);
             contextButton.GetComponent<Image>().type = Image.Type.Simple;
             var icon = contextButton.transform.Find("Icon").GetComponent<RectTransform>();
@@ -100,7 +101,7 @@ namespace MalatangStory.Game
             lrt.offsetMin = new Vector2(6, 14); lrt.offsetMax = new Vector2(-6, 40); contextLabel.fontSize = 17;
 
             summary = UIKit.Outlined(UIKit.Label(root, "", 18, UIKit.Paper, TextAnchor.MiddleRight, true, "Summary"), new Color(0, 0, 0, .6f));
-            UIKit.Place(summary.rectTransform, new Vector2(1, 0), new Vector2(-170, 100), new Vector2(330, 60));
+            UIKit.Place(summary.rectTransform, new Vector2(S.leftHanded ? 0 : 1, 0), new Vector2(S.leftHanded ? 170 : -170, 100), new Vector2(330, 60));
 
             guide = UIKit.Panel(root, new Color(.99f, .96f, .88f, .97f), 18, true, "Tutorial").rectTransform;
             UIKit.Place(guide, new Vector2(0, 1), new Vector2(14, -200), new Vector2(460, 150));
@@ -207,14 +208,15 @@ namespace MalatangStory.Game
             contextButton.gameObject.SetActive(near.HasValue && S.phase != DayPhase.Report);
             if (near.HasValue)
             {
-                contextLabel.text = StationLabel(near.Value);
+                contextLabel.text = (Keyboard() ? S.interactKey + " " : "") + StationLabel(near.Value);
                 contextButton.transform.Find("Icon").GetComponent<Image>().sprite = TextureFactory.Icon(StationIcon(near.Value));
             }
             bool fp = App.World.FirstPersonActive;
             crosshair.gameObject.SetActive(fp);
+            crosshair.sizeDelta = Vector2.one * (App.World.LookTarget != null ? 18 : 12);
             var look = App.World.LookTarget;
             crosshairLabel.gameObject.SetActive(fp && look != null);
-            if (fp && look != null) crosshairLabel.text = (Keyboard() ? "E：" : "タップ：") + StationLabel(look.Station);
+            if (fp && look != null) crosshairLabel.text = (Keyboard() ? S.interactKey + "：" : "タップ：") + StationLabel(look.Station);
             HandleShortcuts();
             bool showMissions = S.missions.Count > 0 && (S.phase == DayPhase.Open || S.phase == DayPhase.Closing);
             missionPanel.gameObject.SetActive(showMissions);

@@ -41,7 +41,8 @@ namespace MalatangStory.Game
 
         public override void Refresh()
         {
-            string sig = tab + ":" + S.moneyFen + ":" + S.pricePer100gFen + ":" + S.staff.Count + ":" + string.Join(",", S.staff.Select(x => x.trainingLevel))
+            string sig = string.Join(",", S.staff.Select(x => x.id + ":" + x.resting + ":" + x.praisedDay + ":" + x.mealDay + ":" + x.motivation + ":" + (int)x.fatigue))
+                + ":" + string.Join(",", S.regulars.Select(x => x.id + ":" + x.affinity + ":" + x.answeredStory + ":" + x.concerned)) + ":" + tab + ":" + S.moneyFen + ":" + S.pricePer100gFen + ":" + S.staff.Count + ":" + string.Join(",", S.staff.Select(x => x.trainingLevel))
                 + ":" + S.signatures.Count + ":" + S.pots + ":" + S.storageCapacity + ":" + string.Join(",", S.equipment.Select(e => e.level)) + ":" + S.storeName + ":" + S.achievements.Count + ":" + string.Join(",", S.skills.Select(x => x.count));
             if (sig == signature) return;
             signature = sig;
@@ -104,7 +105,7 @@ namespace MalatangStory.Game
             UIKit.Place(minus.GetComponent<RectTransform>(), new Vector2(0, 1), new Vector2(0, -42), new Vector2(100, 46));
             var plus = UIKit.Button(right, "+1元", () => Sim.ChangePrice(100), ButtonStyle.Secondary, 18, null, Sim.CanManage);
             UIKit.Place(plus.GetComponent<RectTransform>(), new Vector2(1, 1), new Vector2(0, -42), new Vector2(100, 46));
-            var note = UIKit.Label(right, "1杯（約250g）でおよそ " + RestaurantSimulation.Money(S.pricePer100gFen * 25 / 10) + "。\n値上げすると来客が減り、値下げすると増えます。" + (Sim.CanManage ? "" : "\n<color=#b02a1e>価格は営業前か閉店後に変更できます。</color>"), 15, UIKit.InkSoft, TextAnchor.UpperLeft);
+            var note = UIKit.Label(right, "1杯（約250g）でおよそ " + RestaurantSimulation.Money(S.pricePer100gFen * 25 / 10) + "。\n値上げすると来客が減り、値下げすると増えます。" + (Sim.CanManage ? "" : "\n価格は営業前か閉店後に変更できます。"), 15, UIKit.InkSoft, TextAnchor.UpperLeft);
             UIKit.Place(note.rectTransform, new Vector2(0, 1), new Vector2(0, -96), new Vector2(480, 70));
 
             var nameTitle = UIKit.Label(right, "店名", 20, UIKit.Lacquer, TextAnchor.MiddleLeft, true);
@@ -127,7 +128,8 @@ namespace MalatangStory.Game
             var text = UIKit.Label(bg.transform, "", 19, UIKit.Ink, TextAnchor.MiddleLeft);
             UIKit.Fill(text.rectTransform, 12, 12, 4, 4);
             text.supportRichText = false; text.resizeTextForBestFit = false; text.raycastTarget = false;
-            field.textComponent = text; field.characterLimit = 16; field.text = value;
+            field.textComponent = text; field.characterLimit = 256; field.text = value;
+            field.onEndEdit.AddListener(v => field.SetTextWithoutNotify(PlayerText.Clean(v)));
             return field;
         }
 
@@ -154,7 +156,7 @@ namespace MalatangStory.Game
             {
                 var row = Row(list, 84);
                 int level = S.EquipmentLevel(def.Id);
-                var title = UIKit.Label(row, def.Name + "　<size=16>Lv." + level + " / " + def.MaxLevel + "</size>", 21, UIKit.Ink, TextAnchor.MiddleLeft, true);
+                var title = UIKit.Label(row, def.Name + "　Lv." + level + " / " + def.MaxLevel + "", 21, UIKit.Ink, TextAnchor.MiddleLeft, true);
                 UIKit.Place(title.rectTransform, new Vector2(0, 1), new Vector2(18, -8), new Vector2(560, 34));
                 var desc = UIKit.Label(row, def.Description, 15, UIKit.InkSoft, TextAnchor.MiddleLeft);
                 UIKit.Place(desc.rectTransform, new Vector2(0, 0), new Vector2(18, 8), new Vector2(620, 30));
@@ -180,7 +182,7 @@ namespace MalatangStory.Game
                 var row = Row(list, 84);
                 int rank = Skills.Rank(S, def.Id);
                 string pips = new string('●', rank) + new string('○', def.MaxRank - rank);
-                var title = UIKit.Label(row, def.Name + "　<size=18>" + pips + "</size>　<size=15>" + def.PerRank + "／段階</size>", 21, UIKit.Ink, TextAnchor.MiddleLeft, true);
+                var title = UIKit.Label(row, def.Name + "　" + pips + "　" + def.PerRank + "／段階", 21, UIKit.Ink, TextAnchor.MiddleLeft, true);
                 UIKit.Place(title.rectTransform, new Vector2(0, 1), new Vector2(18, -8), new Vector2(620, 34));
                 var desc = UIKit.Label(row, def.Description, 15, UIKit.InkSoft, TextAnchor.MiddleLeft);
                 UIKit.Place(desc.rectTransform, new Vector2(0, 0), new Vector2(18, 8), new Vector2(620, 30));
@@ -198,28 +200,36 @@ namespace MalatangStory.Game
             var list = List();
             foreach (var def in Content.Staff)
             {
-                var member = S.staff.FirstOrDefault(x => x.role == def.Role);
-                var row = Row(list, 110, member != null ? new Color(.93f, .98f, .92f) : Color.white);
-                var title = UIKit.Label(row, def.Title + (member != null ? "　<size=16>" + member.name + "さん・研修Lv." + member.trainingLevel + "</size>" : ""), 21, UIKit.Ink, TextAnchor.MiddleLeft, true);
-                UIKit.Place(title.rectTransform, new Vector2(0, 1), new Vector2(18, -8), new Vector2(600, 34));
-                var desc = UIKit.Label(row, def.Description + "\n日給 " + RestaurantSimulation.Money(def.DailyWageFen) + "　採用費 " + RestaurantSimulation.Money(def.HireFeeFen)
-                    + "　1作業 約" + (member != null ? StaffSystem.TaskSeconds(member) : def.BaseTaskSeconds).ToString("0") + "秒", 15, UIKit.InkSoft, TextAnchor.UpperLeft);
-                UIKit.Place(desc.rectTransform, new Vector2(0, 1), new Vector2(18, -44), new Vector2(600, 56));
                 var role = def.Role;
-                bool canManage = Sim.CanManage && S.tutorialComplete;
-                if (member == null)
+                int count = S.staff.Count(x => x.role == role);
+                var row = Row(list, 104);
+                var title = UIKit.Label(row, def.Title + "　" + count + "/3人　日給 " + RestaurantSimulation.Money(def.DailyWageFen), 20, UIKit.Ink, TextAnchor.MiddleLeft, true);
+                UIKit.Place(title.rectTransform, new Vector2(0, 1), new Vector2(16, -6), new Vector2(600, 34));
+                var desc = UIKit.Label(row, def.Description, 16, UIKit.InkSoft, TextAnchor.MiddleLeft);
+                UIKit.Place(desc.rectTransform, new Vector2(0, 1), new Vector2(16, -42), new Vector2(540, 48));
+                var hire = UIKit.Button(row, "採用 " + RestaurantSimulation.Money(def.HireFeeFen), () => Sim.HireStaff(role), ButtonStyle.Primary, 17, IconKind.Staff,
+                    Sim.CanManage && count < 3 && S.shopLevel >= def.UnlockLevel && S.moneyFen >= def.HireFeeFen);
+                UIKit.Place(hire.GetComponent<RectTransform>(), new Vector2(1, .5f), new Vector2(-14, -10), new Vector2(230, 48));
+                foreach (var member in S.staff.Where(x => x.role == role))
                 {
-                    string label = S.shopLevel < def.UnlockLevel ? "店舗Lv." + def.UnlockLevel + "で解禁" : "採用する";
-                    var hire = UIKit.Button(row, label, () => Sim.HireStaff(role), ButtonStyle.Primary, 17, IconKind.Staff, canManage && S.shopLevel >= def.UnlockLevel && S.moneyFen >= def.HireFeeFen);
-                    UIKit.Place(hire.GetComponent<RectTransform>(), new Vector2(1, .5f), new Vector2(-14, 0), new Vector2(230, 52));
-                }
-                else
-                {
-                    var train = UIKit.Button(row, member.trainingLevel >= 3 ? "研修完了" : "研修 " + RestaurantSimulation.Money(RestaurantSimulation.TrainingCost(member)), () => Sim.TrainStaff(role), ButtonStyle.Gold, 16, IconKind.Book,
-                        canManage && member.trainingLevel < 3 && S.moneyFen >= RestaurantSimulation.TrainingCost(member));
-                    UIKit.Place(train.GetComponent<RectTransform>(), new Vector2(1, .5f), new Vector2(-150, 0), new Vector2(200, 50));
-                    var fire = UIKit.Button(row, "契約終了", () => Sim.FireStaff(role), ButtonStyle.Tab, 15, null, canManage);
-                    UIKit.Place(fire.GetComponent<RectTransform>(), new Vector2(1, .5f), new Vector2(-14, 0), new Vector2(124, 46));
+                    var person = member;
+                    var card = Row(list, 190, new Color(.93f, .98f, .92f));
+                    string personality = member.personality == 0 ? "せっかち・作業が速い" : member.personality == 1 ? "丁寧・仕上げが得意" : "おしゃべり・場を和ませる";
+                    var name = UIKit.Label(card, member.name + "　研修Lv." + member.trainingLevel + "　" + personality + "\n疲れ " + member.fatigue.ToString("0") + "　やる気 " + member.motivation.ToString("0") + (member.resting ? "　休憩中" : "　勤務中"), 18, UIKit.Ink, TextAnchor.MiddleLeft, true);
+                    UIKit.Place(name.rectTransform, new Vector2(0, 1), new Vector2(16, -6), new Vector2(790, 64));
+                    void Action(string label, int index, int line, System.Action action, bool enabled)
+                    {
+                        var button = UIKit.Button(card, label, action, ButtonStyle.Secondary, 16, null, enabled);
+                        UIKit.Place(button.GetComponent<RectTransform>(), new Vector2(0, 1), new Vector2(16 + index * 260, -78 - line * 50), new Vector2(250, 44));
+                    }
+                    Action(member.trainingLevel == 3 ? "研修完了" : "研修 " + RestaurantSimulation.Money(RestaurantSimulation.TrainingCost(member)), 0, 0, () => Sim.TrainStaff(person.id), Sim.CanManage && member.trainingLevel < 3 && S.moneyFen >= RestaurantSimulation.TrainingCost(member));
+                    Action(member.resting ? "仕事に戻る" : "休ませる", 1, 0, () => Sim.RestStaff(person.id, !person.resting), true);
+                    Action("褒める", 2, 0, () => Sim.PraiseStaff(person.id), member.praisedDay != S.day);
+                    Action("まかない（古い在庫から1個）", 0, 1, () => {
+                        var stock = S.stock.Where(x => x.quantity > 0).OrderByDescending(x => x.ageDays).FirstOrDefault();
+                        if (stock != null) Sim.StaffMeal(person.id, stock.ingredientId);
+                    }, Sim.CanManage && member.mealDay != S.day && S.stock.Any(x => x.quantity > 0));
+                    Action("契約終了", 2, 1, () => Sim.FireStaff(person.id), Sim.CanManage);
                 }
             }
         }
@@ -250,8 +260,8 @@ namespace MalatangStory.Game
             if (S.regulars.Count == 0) { var none = UIKit.Label(list, "満足したお客さんは常連になってくれます。\n常連は好みを覚えていて、親密度が上がると色々な話をしてくれます。", 18, UIKit.InkSoft, TextAnchor.MiddleCenter); UIKit.Height(none, 120); }
             foreach (var regular in S.regulars.OrderByDescending(x => x.affinity))
             {
-                var row = Row(list, 96);
-                var title = UIKit.Label(row, regular.name + "さん　<size=15>" + Content.Archetype(regular.archetype).Label + "・来店" + regular.visits + "回</size>", 20, UIKit.Ink, TextAnchor.MiddleLeft, true);
+                var row = Row(list, 158);
+                var title = UIKit.Label(row, regular.name + "さん　" + Content.Archetype(regular.archetype).Label + "・来店" + regular.visits + "回", 20, UIKit.Ink, TextAnchor.MiddleLeft, true);
                 UIKit.Place(title.rectTransform, new Vector2(0, 1), new Vector2(18, -6), new Vector2(520, 32));
                 var heart = UIKit.Icon(row, IconKind.Heart, UIKit.Lacquer);
                 UIKit.Place(heart.rectTransform, new Vector2(1, 1), new Vector2(-250, -10), new Vector2(24, 24));
@@ -262,6 +272,20 @@ namespace MalatangStory.Game
                 var story = regular.storyIndex > 0 ? "\n" + RegularStories.Line(regular) : "";
                 var desc = UIKit.Label(row, favorite + story, 15, UIKit.InkSoft, TextAnchor.UpperLeft);
                 UIKit.Place(desc.rectTransform, new Vector2(0, 1), new Vector2(18, -40), new Vector2(1000, 52));
+                if (regular.storyIndex > regular.answeredStory)
+                {
+                    var person = regular;
+                    var listen = UIKit.Button(row, "話を聞いて応援する", () => Sim.ReplyToRegular(person.id, true), ButtonStyle.Gold, 16, IconKind.Heart);
+                    UIKit.Place(listen.GetComponent<RectTransform>(), new Vector2(0, 0), new Vector2(18, 8), new Vector2(270, 44));
+                    var later = UIKit.Button(row, "またゆっくり話そう", () => Sim.ReplyToRegular(person.id, false), ButtonStyle.Secondary, 16);
+                    UIKit.Place(later.GetComponent<RectTransform>(), new Vector2(0, 0), new Vector2(300, 8), new Vector2(270, 44));
+                }
+                else if (regular.lastVisitDay > 0 && S.day - regular.lastVisitDay >= 3)
+                {
+                    var person = regular;
+                    var ask = UIKit.Button(row, regular.concerned ? "また会えるのを待っています" : "最近見ないけれど元気かな", () => Sim.AskAfterRegular(person.id), ButtonStyle.Secondary, 16, IconKind.Heart, !regular.concerned);
+                    UIKit.Place(ask.GetComponent<RectTransform>(), new Vector2(0, 0), new Vector2(18, 8), new Vector2(400, 44));
+                }
             }
         }
 

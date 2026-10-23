@@ -12,6 +12,8 @@ namespace MalatangStory.Game
     public sealed class HudView : UIScreen
     {
         private Text dayText, clockText, moneyText, reputationText, levelText, phaseText, starsText, comboText;
+        private int shownDay = -1;
+        private string shownWeather;
         private RectTransform comboBadge;
         private Button viewButton;
         private bool shownFirstPerson;
@@ -153,6 +155,7 @@ namespace MalatangStory.Game
                 case OrderStage.Ordering: return IconKind.Coin;
                 case OrderStage.Selecting: return IconKind.Leaf;
                 case OrderStage.Weighed: return IconKind.Scale;
+                case OrderStage.Delivering: return IconKind.ArrowRight;
                 case OrderStage.Heating: return IconKind.Pot;
                 case OrderStage.Drained: return IconKind.Drop;
                 case OrderStage.Finishing: return IconKind.Ladle;
@@ -163,6 +166,7 @@ namespace MalatangStory.Game
 
         public static string StageText(RestaurantSimulation sim, CustomerOrder o)
         {
+            if (o.stage == OrderStage.Delivering) return "配達中・あと" + Mathf.Max(0, o.deliveryDuration - o.deliverySeconds).ToString("0") + "秒";
             if (o.handledByStaff && o.stage != OrderStage.Ready) return "スタッフ調理中";
             switch (o.stage)
             {
@@ -182,12 +186,13 @@ namespace MalatangStory.Game
         {
             var s = S;
             float minutes = 660 + s.daySeconds / RestaurantSimulation.DayDuration * 540;
-            dayText.text = Seasons.Of(s.day).Name + "・" + s.day + "日目　" + Content.Weather(s.weather).Name;
-            phaseText.text = App.Paused ? "一時停止中" : Phase(s);
+            if (shownDay != s.day || shownWeather != s.weather)
+            { shownDay = s.day; shownWeather = s.weather; dayText.text = UiText.Format("hud.day", Seasons.Of(s.day).Name, s.day, Content.Weather(s.weather).Name); }
+            phaseText.text = (App.Paused ? "一時停止中" : Phase(s)) + (s.collectionTitle ? "・麻辣の探究者" : "");
             clockText.text = ((int)minutes / 60).ToString("00") + ":" + ((int)minutes % 60).ToString("00");
             UIKit.SetBar(clockFill, s.daySeconds / RestaurantSimulation.DayDuration);
             weatherIcon.sprite = TextureFactory.Icon(WeatherIcon(s.weather));
-            shownMoney = (long)Mathf.Lerp(shownMoney, s.moneyFen, Mathf.Clamp01(deltaTime * 8));
+            shownMoney = (long)(shownMoney + ((double)s.moneyFen - shownMoney) * Mathf.Clamp01(deltaTime * 8));
             if (System.Math.Abs(shownMoney - s.moneyFen) < 50) shownMoney = s.moneyFen;
             moneyText.text = RestaurantSimulation.Money(shownMoney);
             reputationText.text = s.reputation.ToString("0");

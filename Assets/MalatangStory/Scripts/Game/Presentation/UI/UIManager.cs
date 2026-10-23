@@ -8,7 +8,7 @@ using UnityEngine.UI;
 namespace MalatangStory.Game
 {
     /// <summary>画面の種類。</summary>
-    public enum GameScreen { Title, Store, Cooking, Shop, Management, Build, Report, Morning, Pause, Settings, Wardrobe, Help, Register, Collection }
+    public enum GameScreen { Title, Store, Cooking, Shop, Management, Build, Report, Morning, Pause, Settings, Wardrobe, Help, Register, Collection, Accessibility, Preparation, Challenges, Neighbourhood, Stall, Photo }
 
     /// <summary>
     /// 画面の基底クラス。Build で一度だけ部品を作り、以後は Refresh（状態変化時）と Tick（毎フレーム）で中身だけ更新する。
@@ -38,7 +38,12 @@ namespace MalatangStory.Game
         protected abstract void Build(RectTransform root);
         public virtual void Refresh() { }
         public virtual void Tick(float deltaTime) { }
-        public virtual void Close() { if (Root != null) UnityEngine.Object.Destroy(Root.gameObject); }
+        public virtual void Close()
+        {
+            if (Root == null) return;
+            if (UIKit.ReduceMotion || !Application.isPlaying) UnityEngine.Object.Destroy(Root.gameObject);
+            else Root.gameObject.AddComponent<PanelExit>();
+        }
 
         /// <summary>子を全て削除する（部分的な作り直し用）。</summary>
         protected static void Clear(Transform parent)
@@ -63,8 +68,20 @@ namespace MalatangStory.Game
         private CanvasScaler scaler;
         private UIScreen current;
         private HudView hud;
-        private readonly List<(RectTransform rt, float age, float life)> toasts = new List<(RectTransform, float, float)>();
+        private sealed class ToastItem
+        {
+            public RectTransform Rect;
+            public float Age, Life;
+            public string Message;
+            public IconKind Icon;
+            public Color? Accent;
+        }
+        private readonly List<ToastItem> toasts = new List<ToastItem>();
+        private int ToastCapacity => ToastAtBottom || announcement != null || safe.rect.height < 650 ? 1 : 2;
         private readonly List<(RectTransform rt, Vector3 world, float age, float life)> popups = new List<(RectTransform, Vector3, float, float)>();
+        private readonly Queue<(string message, IconKind icon, Color? accent, float seconds)> pendingToasts = new Queue<(string, IconKind, Color?, float)>();
+        private readonly Vector3[] overlayCorners = new Vector3[4];
+        private readonly List<Rect> overlayObstacles = new List<Rect>(16);
         private readonly List<SpeechBubble> speeches = new List<SpeechBubble>();
 
         /// <summary>3D の人物の頭上に追従する吹き出し。</summary>
@@ -148,6 +165,12 @@ namespace MalatangStory.Game
                 case GameScreen.Morning: return new MorningScreen();
                 case GameScreen.Pause: return new PauseScreen();
                 case GameScreen.Settings: return new SettingsScreen();
+                case GameScreen.Accessibility: return new AccessibilityScreen();
+                case GameScreen.Preparation: return new PreparationScreen();
+                case GameScreen.Challenges: return new ChallengeScreen();
+                case GameScreen.Neighbourhood: return new NeighbourhoodScreen();
+                case GameScreen.Stall: return new StallScreen();
+                case GameScreen.Photo: return new PhotoScreen();
                 case GameScreen.Wardrobe: return new WardrobeScreen();
                 case GameScreen.Help: return new HelpScreen();
                 case GameScreen.Register: return new RegisterScreen();
@@ -157,6 +180,9 @@ namespace MalatangStory.Game
         }
 
         /// <summary>状態が変わった時に呼ぶ。</summary>
+        public void SetPhotoOverlaysVisible(bool visible)
+        { popupLayer.gameObject.SetActive(visible); toastLayer.gameObject.SetActive(visible); }
+
         public void Refresh()
         {
             hud?.Refresh();
@@ -169,21 +195,24 @@ namespace MalatangStory.Game
             if (string.IsNullOrEmpty(message)) return;
             for (int i = 0; i < toasts.Count; i++)
             {
-                var label = toasts[i].rt != null ? toasts[i].rt.GetComponentInChildren<Text>() : null;
-                if (label != null && label.text == message) { toasts[i] = (toasts[i].rt, 0, Mathf.Max(toasts[i].life, seconds)); return; }
+                if (toasts[i].Message == message) { toasts[i].Age = 0; toasts[i].Life = Mathf.Max(toasts[i].Life, seconds); return; }
             }
-            // 大きなカードの画面では下の余白に1件しか収まらず、重ねるとカードのボタン列を覆うため、最新の1件だけ残す。
-            int keep = ToastAtBottom ? 1 : 3;
-            while (toasts.Count >= keep) { Destroy(toasts[0].rt.gameObject); toasts.RemoveAt(0); }
+            foreach (var pending in pendingToasts) if (pending.message == message) return;
+            if (toasts.Count >= ToastCapacity)
+            {
+                pendingToasts.Enqueue((message, icon, accent, seconds));
+                return;
+            }
             var panel = UIKit.Panel(toastLayer, new Color(.16f, .11f, .09f, .92f), 18, true, "Toast");
-            var rt = UIKit.Place(panel.rectTransform, new Vector2(.5f, 1), new Vector2(0, ToastAtBottom ? -(safe.rect.height - 60) : -260), new Vector2(580, 52));
+            Rect bounds = OverlayLayout.ToastRect(safe.rect, app.Screen, 0, ToastAtBottom);
+            var rt = UIKit.Place(panel.rectTransform, new Vector2(.5f, 1), new Vector2(bounds.center.x - safe.rect.center.x, bounds.center.y - safe.rect.yMax), bounds.size);
             var iconImage = UIKit.Icon(rt, icon, accent ?? UIKit.Gold);
             UIKit.Place(iconImage.rectTransform, new Vector2(0, .5f), new Vector2(14, 0), new Vector2(30, 30));
             var text = UIKit.Label(rt, message, 19, UIKit.Paper, TextAnchor.MiddleLeft);
             UIKit.Fill(text.rectTransform, 54, 14, 4, 4);
             panel.gameObject.AddComponent<PopIn>().Duration = .22f;
             foreach (var graphic in panel.GetComponentsInChildren<Graphic>()) graphic.raycastTarget = false;
-            toasts.Add((rt, 0, seconds));
+            toasts.Add(new ToastItem { Rect = rt, Life = seconds, Message = message, Icon = icon, Accent = accent });
         }
 
         private RectTransform announcement;
@@ -222,10 +251,12 @@ namespace MalatangStory.Game
             speeches.Clear();
         }
 
-        private void ClearToasts()
+        public void ClearToasts()
         {
-            foreach (var t in toasts) if (t.rt != null) Destroy(t.rt.gameObject);
+            foreach (var t in toasts) if (t.Rect != null) Destroy(t.Rect.gameObject);
             toasts.Clear();
+            pendingToasts.Clear();
+            if (announcement != null) Destroy(announcement.gameObject);
         }
 
         /// <summary>3D 空間の位置に、浮かび上がって消える文字を出す（売上・品質など）。</summary>
@@ -275,7 +306,18 @@ namespace MalatangStory.Game
             rt.gameObject.SetActive(screen.z > 0);
             RectTransformUtility.ScreenPointToLocalPointInRectangle(popupLayer, screen, null, out var local);
             rt.anchorMin = rt.anchorMax = new Vector2(.5f, .5f);
-            rt.anchoredPosition = local;
+            rt.anchoredPosition = OverlayLayout.Clamp(popupLayer.rect, rt.sizeDelta, rt.pivot, local);
+        }
+
+        private bool ViewVisible(Vector3 point) => app.World.View.WorldToViewportPoint(point).z > 0;
+
+        private void AddObstacle(RectTransform rt)
+        {
+            if (rt == null || !rt.gameObject.activeInHierarchy) return;
+            rt.GetWorldCorners(overlayCorners);
+            Vector2 low = popupLayer.InverseTransformPoint(overlayCorners[0]);
+            Vector2 high = popupLayer.InverseTransformPoint(overlayCorners[2]);
+            overlayObstacles.Add(Rect.MinMaxRect(low.x - 8, low.y - 8, high.x + 8, high.y + 8));
         }
 
         private void Update()
@@ -285,25 +327,36 @@ namespace MalatangStory.Game
             // 大きなカードの画面では、店内の吹き出し・浮かぶ文字がカードの上に重なって読みにくいため隠す。
             bool modal = ToastAtBottom;
             if (popupLayer.gameObject.activeSelf == modal) popupLayer.gameObject.SetActive(!modal);
-            if (modal)
-                while (toasts.Count > 1) { if (toasts[0].rt != null) Destroy(toasts[0].rt.gameObject); toasts.RemoveAt(0); }
+
+            while (toasts.Count > ToastCapacity)
+            {
+                ToastItem item = toasts[toasts.Count - 1];
+                int waiting = pendingToasts.Count;
+                pendingToasts.Enqueue((item.Message, item.Icon, item.Accent, Mathf.Max(.5f, item.Life - item.Age)));
+                for (int i = 0; i < waiting; i++) pendingToasts.Enqueue(pendingToasts.Dequeue());
+                item.Rect.gameObject.SetActive(false); Destroy(item.Rect.gameObject); toasts.RemoveAt(toasts.Count - 1);
+            }
             for (int i = toasts.Count - 1; i >= 0; i--)
             {
                 var t = toasts[i];
-                t.age += dt;
-                if (t.rt == null || t.age > t.life) { if (t.rt != null) Destroy(t.rt.gameObject); toasts.RemoveAt(i); continue; }
+                t.Age += dt;
+                if (t.Rect == null || t.Age > t.Life) { if (t.Rect != null) Destroy(t.Rect.gameObject); toasts.RemoveAt(i); continue; }
                 toasts[i] = t;
+            }
+            if (pendingToasts.Count > 0 && toasts.Count < ToastCapacity)
+            {
+                var pending = pendingToasts.Dequeue();
+                Toast(pending.message, pending.icon, pending.accent, pending.seconds);
             }
             for (int i = 0; i < toasts.Count; i++)
             {
                 var t = toasts[i];
-                float targetY = ToastAtBottom ? -(safe.rect.height - 60) + (toasts.Count - 1 - i) * 56 : -206 - (toasts.Count - 1 - i) * 58;
-                var pos = t.rt.anchoredPosition;
-                pos.y = Mathf.Lerp(pos.y, targetY, dt * 12);
-                t.rt.anchoredPosition = pos;
-                float fade = Mathf.Clamp01((t.life - t.age) / .35f);
-                var group = t.rt.GetComponent<CanvasGroup>();
-                if (group != null && t.rt.GetComponent<PopIn>() == null) group.alpha = fade;
+                Rect bounds = OverlayLayout.ToastRect(safe.rect, app.Screen, i, ToastAtBottom);
+                t.Rect.sizeDelta = bounds.size;
+                t.Rect.anchoredPosition = new Vector2(bounds.center.x - safe.rect.center.x, bounds.center.y - safe.rect.yMax);
+                float fade = Mathf.Clamp01((t.Life - t.Age) / .35f);
+                var group = t.Rect.GetComponent<CanvasGroup>();
+                if (group != null && t.Rect.GetComponent<PopIn>() == null) group.alpha = fade;
             }
             for (int i = popups.Count - 1; i >= 0; i--)
             {
@@ -316,6 +369,14 @@ namespace MalatangStory.Game
                 p.rt.localScale = Vector3.one * (p.age < .15f ? Mathf.Lerp(.6f, 1.15f, p.age / .15f) : Mathf.Lerp(1.15f, 1f, Mathf.Clamp01((p.age - .15f) / .2f)));
                 popups[i] = p;
             }
+            overlayObstacles.Clear();
+            AddObstacle(announcement);
+            AddObstacle(current?.Root?.Find("Dialog") as RectTransform);
+            AddObstacle(current?.Root?.Find("Register Card") as RectTransform);
+            AddObstacle(current?.Root?.Find("Tutorial") as RectTransform);
+            AddObstacle(current?.Root?.Find("Missions") as RectTransform);
+            AddObstacle(current?.Root?.Find("Next Action") as RectTransform);
+            foreach (var t in toasts) AddObstacle(t.Rect);
             for (int i = speeches.Count - 1; i >= 0; i--)
             {
                 var b = speeches[i];
@@ -323,6 +384,11 @@ namespace MalatangStory.Game
                 Vector3? anchor = b.Rect != null ? b.Anchor() : null;
                 if (b.Rect == null || b.Age > b.Life || !anchor.HasValue) { if (b.Rect != null) Destroy(b.Rect.gameObject); speeches.RemoveAt(i); continue; }
                 PositionPopup(b.Rect, anchor.Value, 0);
+                Vector2 placed;
+                bool fits = OverlayLayout.TryPlace(popupLayer.rect, b.Rect.sizeDelta, b.Rect.pivot, b.Rect.anchoredPosition, overlayObstacles, out placed);
+                b.Rect.gameObject.SetActive(fits && ViewVisible(anchor.Value));
+                b.Rect.anchoredPosition = placed;
+                if (fits) AddObstacle(b.Rect);
             }
             if (app == null || app.Simulation == null) return;
             hud?.Tick(dt);

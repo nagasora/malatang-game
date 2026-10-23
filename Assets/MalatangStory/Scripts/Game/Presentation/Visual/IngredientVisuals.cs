@@ -1264,6 +1264,7 @@ namespace MalatangStory.Game
                 float drySmoothness, float cookedSmoothness, float overcookedSmoothness)
             {
                 Renderer = renderer;
+                if (renderer.sharedMaterial != null) renderer.sharedMaterial.EnableKeyword("_EMISSION");
                 Raw = raw;
                 Cooked = cooked;
                 Overcooked = overcooked;
@@ -1274,12 +1275,23 @@ namespace MalatangStory.Game
             }
         }
 
+        private static readonly int EmissionColorId = Shader.PropertyToID("_EmissionColor");
         private static readonly int BaseColorId = Shader.PropertyToID("_BaseColor");
         private static readonly int ColorId = Shader.PropertyToID("_Color");
         private static readonly int SmoothnessId = Shader.PropertyToID("_Smoothness");
         private static readonly int GlossinessId = Shader.PropertyToID("_Glossiness");
         private RendererState[] states = Array.Empty<RendererState>();
         private float doneness;
+        private float appliedShrink = 1;
+        private bool hasSoup;
+        private float soupLevel;
+        private Color soupTint;
+        public void SetSoupLevel(float height, Color tint)
+        {
+            if (!float.IsFinite(height)) return;
+            if (hasSoup && Mathf.Abs(soupLevel - height) < .003f && soupTint == tint) return;
+            hasSoup = true; soupLevel = height; soupTint = tint; ApplyState();
+        }
         private float wetness;
         private bool initialized;
 
@@ -1340,6 +1352,8 @@ namespace MalatangStory.Game
             OwnedObjects.ValidateFinite(doneness, nameof(doneness));
             EnsureInitialized();
             this.doneness = Mathf.Clamp(doneness, 0f, 1.5f);
+            float shrink = CookingFeel.Cues(this.doneness).Scale;
+            transform.localScale *= shrink / appliedShrink; appliedShrink = shrink;
             ApplyState();
         }
 
@@ -1358,12 +1372,22 @@ namespace MalatangStory.Game
         /// <summary>色、透明度と艶をレンダラーのプロパティブロックだけで反映します。</summary>
         private void ApplyState()
         {
-            float cookedAmount = Mathf.Clamp01(doneness);
-            float overAmount = Mathf.Clamp01((doneness - 1f) * 2f);
+            CookingCue cue = CookingFeel.Cues(doneness);
+            float cookedAmount = cue.ColourBlend;
+            float overAmount = cue.OverBlend;
             foreach (RendererState state in states)
             {
                 if (state.Renderer == null) continue;
                 Color color = Color.Lerp(Color.Lerp(state.Raw, state.Cooked, cookedAmount), state.Overcooked, overAmount);
+                if (hasSoup)
+                {
+                    Bounds bounds = state.Renderer.bounds;
+                    float immersed = Mathf.Clamp01((soupLevel - bounds.min.y) / Mathf.Max(.001f, bounds.size.y));
+                    float alpha = color.a;
+                    color = Color.Lerp(color, soupTint, immersed * wetness * .18f);
+                    color *= 1 - .08f * immersed * (1 - immersed) * 4;
+                    color.a = alpha;
+                }
                 float dry = Mathf.Lerp(Mathf.Lerp(state.DrySmoothness, state.CookedSmoothness, cookedAmount),
                     state.OvercookedSmoothness, overAmount);
                 float smoothness = Mathf.Lerp(dry, .92f, wetness);
@@ -1372,6 +1396,7 @@ namespace MalatangStory.Game
                 state.Block.SetColor(ColorId, color);
                 state.Block.SetFloat(SmoothnessId, smoothness);
                 state.Block.SetFloat(GlossinessId, smoothness);
+                state.Block.SetColor(EmissionColorId, cue.Ready ? color * (.06f + Mathf.Sin(Time.time * 5) * .025f) : Color.black);
                 state.Renderer.SetPropertyBlock(state.Block);
             }
         }

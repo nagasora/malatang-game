@@ -59,6 +59,7 @@ namespace MalatangStory.Game
         public bool looseTie;
         /// <summary>身長の倍率（0.85〜1.1）。子どもは 0.7 程度。</summary>
         public float height = 1f;
+        public bool embroidery;
 
         /// <summary>値を複製する。</summary>
         public CharacterAppearance Clone() => (CharacterAppearance)MemberwiseClone();

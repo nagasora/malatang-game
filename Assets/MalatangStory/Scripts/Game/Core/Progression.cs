@@ -11,7 +11,7 @@ namespace MalatangStory.Game
         public static void AddExperience(RestaurantSimulation sim, int amount)
         {
             var s = sim.State;
-            s.experience += Math.Max(0, amount);
+            s.experience = (int)Math.Min(SaveLimits.MaximumExperience, (long)s.experience + Math.Max(0, amount));
             s.report.experience += Math.Max(0, amount);
             while (s.shopLevel < Content.MaxShopLevel && s.experience >= Content.ExperienceForLevel(s.shopLevel + 1))
             {

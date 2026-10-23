@@ -107,6 +107,7 @@ namespace MalatangStory.Game
         public static Mesh Leaf(float width, float length, float curl = .2f, float serration = .1f, int rows = 8, int columns = 4)
         {
             ValidateGrid(width, length, rows, columns);
+            rows = Mathf.Min(rows, 6); columns = Mathf.Min(columns, 3);
             List<Vector3> v = new List<Vector3>(); List<Vector2> uv = new List<Vector2>(); List<int> t = new List<int>();
             for (int y = 0; y <= rows; y++)
                 for (int x = 0; x <= columns; x++)
@@ -122,13 +123,14 @@ namespace MalatangStory.Game
                     int i = y * (columns + 1) + x;
                     Triangle(t, i, i + columns + 1, i + 1); Triangle(t, i + 1, i + columns + 1, i + columns + 2);
                 }
-            return Finish("Food Leaf", v, t, uv);
+            return FinishLeaf("Food Leaf", v, t, uv, width);
         }
 
         /// <summary>波打つしわのある矩形シートをXZ面に生成します。</summary>
         public static Mesh Sheet(float width, float length, float folds = 3f, float amplitude = .01f, int rows = 8, int columns = 6)
         {
             ValidateGrid(width, length, rows, columns);
+            rows = Mathf.Min(rows, 6); columns = Mathf.Min(columns, 3);
             List<Vector3> v = new List<Vector3>(); List<Vector2> uv = new List<Vector2>(); List<int> t = new List<int>();
             for (int y = 0; y <= rows; y++)
                 for (int x = 0; x <= columns; x++)
@@ -140,7 +142,7 @@ namespace MalatangStory.Game
                     int i = y * (columns + 1) + x;
                     Triangle(t, i, i + columns + 1, i + 1); Triangle(t, i + 1, i + columns + 1, i + columns + 2);
                 }
-            return Finish("Food Sheet", v, t, uv);
+            return FinishLeaf("Food Sheet", v, t, uv, width);
         }
 
         /// <summary>穴付き輪切りを生成します。表裏と穴壁を分離して切断面を硬い法線にします。</summary>
@@ -259,6 +261,7 @@ namespace MalatangStory.Game
         public static Mesh VegetableLeaf(float width, float length, FoodLeafShape shape, float curl = .2f, float serration = .1f, int rows = 10, int columns = 4)
         {
             ValidateGrid(width, length, rows, columns);
+            rows = Mathf.Min(rows, 6); columns = Mathf.Min(columns, 3);
             List<Vector3> vertices = new List<Vector3>(); List<Vector2> uv = new List<Vector2>(); List<int> triangles = new List<int>();
             for (int y = 0; y <= rows; y++) for (int x = 0; x <= columns; x++)
             {
@@ -269,7 +272,7 @@ namespace MalatangStory.Game
                 {
                     case FoodLeafShape.Rounded: envelope = .06f + .94f * Mathf.Pow(sine, .38f); break;
                     case FoodLeafShape.Arrow:
-                        envelope = .035f + .83f * Mathf.Pow(sine, 1.05f) + .27f * Mathf.Exp(-Mathf.Pow((s - .15f) * 9f, 2f)); break;
+                        envelope = .075f + .79f * Mathf.Pow(sine, .65f) + .27f * Mathf.Exp(-Mathf.Pow((s - .15f) * 9f, 2f)); break;
                     case FoodLeafShape.Cut: envelope = .68f + .32f * Mathf.Sin(s * Mathf.PI * .85f); break;
                     default: envelope = .08f + .92f * Mathf.Pow(sine, .6f); break;
                 }
@@ -283,7 +286,36 @@ namespace MalatangStory.Game
                 int i = y * (columns + 1) + x;
                 Triangle(triangles, i, i + columns + 1, i + 1); Triangle(triangles, i + 1, i + columns + 1, i + columns + 2);
             }
-            return Finish("Food " + shape + " Leaf", vertices, triangles, uv);
+            return FinishLeaf("Food " + shape + " Leaf", vertices, triangles, uv, width);
+        }
+
+        private static Mesh FinishLeaf(string name, List<Vector3> vertices, List<int> triangles, List<Vector2> uv, float width)
+        {
+            int count = vertices.Count, triangleCount = triangles.Count;
+            float halfThickness = Mathf.Max(.0006f, width * .012f);
+            var edges = new Dictionary<(int, int), (int count, int a, int b)>();
+            void Edge(int a, int b)
+            {
+                var key = a < b ? (a, b) : (b, a);
+                edges.TryGetValue(key, out var references); edges[key] = (references.count + 1, a, b);
+            }
+            for (int i = 0; i < count; i++)
+            {
+                Vector3 point = vertices[i]; vertices[i] = point + Vector3.up * halfThickness;
+                vertices.Add(point - Vector3.up * halfThickness); uv.Add(uv[i]);
+            }
+            for (int i = 0; i < triangleCount; i += 3)
+            {
+                int a = triangles[i], b = triangles[i + 1], c = triangles[i + 2];
+                Triangle(triangles, a + count, c + count, b + count); Edge(a, b); Edge(b, c); Edge(c, a);
+            }
+            foreach (var edge in edges)
+                if (edge.Value.count == 1)
+                {
+                    int a = edge.Value.a, b = edge.Value.b;
+                    Triangle(triangles, a, a + count, b); Triangle(triangles, b, a + count, b + count);
+                }
+            return Finish(name, vertices, triangles, uv);
         }
 
         /// <summary>切り口に平面UVを付けた四角形を追加します。</summary>

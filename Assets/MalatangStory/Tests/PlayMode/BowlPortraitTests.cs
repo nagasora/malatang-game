@@ -24,6 +24,18 @@ namespace MalatangStory.Tests
         private Action originalClickSound;
         private int originalStartTab;
 
+        [Test]
+        public void PaintedGarnishPositionsArePartOfThePortraitCacheKey()
+        {
+            var order = new CustomerOrder { id = "painted-portrait", chosenSoup = "mala", chosenSpice = 1,
+                selected = new List<string> { "enoki" }, condiments = new List<string> { "garlic" } };
+            Texture2D initial = BowlPortrait.Get(order);
+            order.garnishStrokes.Add(new GarnishStroke { id = "garlic", x = .4f, z = -.3f });
+            Texture2D painted = BowlPortrait.Get(order);
+            Assert.AreNotSame(initial, painted);
+            Assert.AreSame(painted, BowlPortrait.Get(order));
+        }
+
         /// <summary>各テストを空の画像キャッシュで開始し、変更する共有状態を退避します。</summary>
         [SetUp]
         public void SetUp()
@@ -85,17 +97,20 @@ namespace MalatangStory.Tests
                 AlbumEntry entry = Entry();
                 entry.soup = soupId; entry.spice = 0;
                 entry.ingredients.Clear(); entry.condiments.Clear();
-                Texture2D image = BowlPortrait.Get(entry);
+                Texture2D image = BowlPortrait.Get(entry, false);
+                Texture2D photo = BowlPortrait.Get(entry);
+                Assert.AreNotSame(image, photo);
+                Assert.Greater(ReadPortraitPixels(photo)[0].a, .99f, "料理写真には木目の卓上背景を含める");
                 Color[] pixels = ReadPortraitPixels(image);
                 int left = image.width, right = -1, opaque = 0, saturated = 0;
                 for (int index = 0; index < pixels.Length; index++)
                 {
                     Color pixel = pixels[index];
                     if (pixel.a < .99f) continue;
-                    int x = index % image.width;
-                    left = Mathf.Min(left, x); right = Mathf.Max(right, x);
                     opaque++;
                     if (Mathf.Max(pixel.r, Mathf.Max(pixel.g, pixel.b)) >= .995f) saturated++;
+                    int x = index % image.width;
+                    left = Mathf.Min(left, x); right = Mathf.Max(right, x);
                 }
                 Assert.Greater(opaque, 0, soupId);
                 Assert.Greater((right - left + 1f) / image.width, .76f, "器が枠内で小さくなり過ぎない");
@@ -381,7 +396,7 @@ namespace MalatangStory.Tests
             Transform tabs = screen.Root.GetComponentsInChildren<Transform>(true).Single(value => value.name == "Tabs");
             string[] labels = tabs.GetComponentsInChildren<Button>().Select(button => button.name).ToArray();
 
-            CollectionAssert.AreEqual(new[] { "店の物語", "お客さん図鑑", "食材図鑑", "レシピ帳", "ミッション", "記録", "一杯アルバム", "希少食材" }, labels);
+            CollectionAssert.AreEqual(new[] { "店の物語", "お客さん図鑑", "食材図鑑", "レシピ帳", "ミッション", "記録", "一杯アルバム", "希少食材", "収集報酬" }, labels);
             RawImage portrait = screen.Root.GetComponentsInChildren<RawImage>().Single(value => value.name == "Bowl Portrait");
             Assert.AreSame(BowlPortrait.Get(entry), portrait.texture);
             Assert.IsFalse(portrait.raycastTarget);

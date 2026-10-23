@@ -88,19 +88,16 @@ namespace MalatangStory.Tests
             Color[] pixels = SoupVisuals.GenerateSurfacePixels("baitang", 0);
             System.Random random = new System.Random(CustomerDirector.StableHash("baitang"));
             int count = SoupAppearance.ForSoup("baitang", 0).OilDrops;
-            Vector3[] drops = new Vector3[count];
+            OilDroplet previous = default;
+            bool visible = false;
             for (int index = 0; index < count; index++)
             {
-                GarnishPlacement placement = SoupAppearance.Scatter(random, .84f);
-                float variation = (float)random.NextDouble();
-                float radius = index % 5 == 0 ? .072f + variation * .022f : .014f + variation * .03f;
-                drops[index] = new Vector3(placement.X, placement.Z, radius);
-            }
-            bool visible = false;
-            foreach (Vector3 drop in drops)
-            {
-                Color center = PixelAt(pixels, drop.x, drop.y);
-                Color rim = PixelAt(pixels, drop.x + drop.z * .83f, drop.y);
+                OilDroplet drop = OilDropletRules.Next(random, false, 0, previous, index > 0);
+                previous = drop;
+                if (drop.Radius < .025f) continue;
+                Color center = PixelAt(pixels, drop.X, drop.Z);
+                float distance = drop.Radius * drop.Aspect * .83f;
+                Color rim = PixelAt(pixels, drop.X + Mathf.Cos(drop.Angle) * distance, drop.Z + Mathf.Sin(drop.Angle) * distance);
                 visible |= center.r - center.g > .2f && Luminance(rim) - Luminance(center) > .1f;
             }
             Assert.IsTrue(visible, "SmoothStepのfrom/toを閾値と誤用して油玉の不透明度を潰さない");

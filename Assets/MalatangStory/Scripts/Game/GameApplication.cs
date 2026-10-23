@@ -11,7 +11,7 @@ namespace MalatangStory.Game
     /// ゲーム全体の起点。シミュレーション・ワールド・UI・オーディオ・保存を結び付け、
     /// シミュレーションの出来事を効果音・演出・通知に振り分ける。
     /// </summary>
-    public sealed class GameApplication : MonoBehaviour
+    public sealed partial class GameApplication : MonoBehaviour
     {
         public static string SavePathOverride;
         public RestaurantSimulation Simulation { get; private set; }
@@ -47,12 +47,20 @@ namespace MalatangStory.Game
             smokeOutput = Environment.GetEnvironmentVariable("MALATANG_SMOKE_OUTPUT");
             if (smokeIndex >= 0 && smokeIndex + 1 < args.Length) smokeOutput = args[smokeIndex + 1];
             // iOS シミュレーターでは書き込める場所がアプリ内に限られるため、"persistent" はアプリの保存領域を指す。
-            if (smokeOutput == "persistent") smokeOutput = Path.Combine(Application.persistentDataPath, "smoke");
+            if (smokeOutput == "persistent")
+            {
+                smokeOutput = Path.Combine(Application.persistentDataPath, "smoke");
+                Directory.CreateDirectory(smokeOutput);
+            }
+            if (!SmokeOutputPath.TryResolve(smokeOutput, out smokeOutput)) smokeOutput = null;
             if (!string.IsNullOrEmpty(smokeOutput)) { SavePathOverride = Path.Combine(smokeOutput, "smoke-save.json"); Application.runInBackground = true; }
 #endif
+            UiText.Initialize();
             font = Resources.Load<Font>("Fonts/NotoSansJP") ?? Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
+            UIKit.HeadingFont = Resources.Load<Font>("Fonts/ZenMaruGothic-Regular") ?? font;
             Catalog = IngredientCatalog.Load();
-            Saves = new SaveRepository(SavePathOverride ?? Path.Combine(Application.persistentDataPath, "malatang-save.json"));
+            campaignPath = SavePathOverride ?? Path.Combine(Application.persistentDataPath, "malatang-save.json");
+            Saves = campaignSaves = new SaveRepository(campaignPath);
             CharacterFactory.MaterialProvider = (color, smoothness) => MaterialLibrary.Lit(color, smoothness);
             Audio = gameObject.AddComponent<AudioDirector>();
             Audio.Initialize();
@@ -62,8 +70,10 @@ namespace MalatangStory.Game
             UI = gameObject.AddComponent<UIManager>();
             UI.Initialize(this, font);
             SoupVisuals.PrewarmReport soupWarmup = SoupVisuals.PrewarmAll();
+#if UNITY_EDITOR || DEVELOPMENT_BUILD
             Debug.Log($"[SoupPrewarm] elapsedMs={soupWarmup.ElapsedMilliseconds:F2} textureBytes={soupWarmup.TextureBytes} "
                 + $"meshBytes={soupWarmup.SeasoningMeshBytes} totalBytes={soupWarmup.TotalResourceBytes} nativeBytes={soupWarmup.NativeMemoryBytes}");
+#endif
             ResetSimulation(null);
             StartCoroutine(Icons.RenderAll(Catalog.ingredients, 3));
             Open(GameScreen.Title);
@@ -75,6 +85,7 @@ namespace MalatangStory.Game
 
         private void ResetSimulation(GameState state)
         {
+            UI?.ClearToasts();
             if (Simulation != null) { Simulation.Event -= OnSimEvent; }
             Simulation = new RestaurantSimulation(Catalog, state);
             Simulation.Changed += () => dirty = true;
@@ -112,7 +123,7 @@ namespace MalatangStory.Game
                 ResetSimulation(state);
                 Started = true; Paused = false;
                 SelectedOrderId = Simulation.Active.FirstOrDefault(o => o.stage != OrderStage.Waiting)?.id;
-                Open(state.phase == DayPhase.Report ? GameScreen.Report : state.phase == DayPhase.Preparation ? GameScreen.Morning : GameScreen.Store);
+                Open(state.phase == DayPhase.Report ? GameScreen.Report : state.phase == DayPhase.Preparation ? GameScreen.Morning : state.festivalStall ? GameScreen.Stall : GameScreen.Store);
             }
             catch (Exception e)
             {
@@ -129,11 +140,12 @@ namespace MalatangStory.Game
         public void Open(GameScreen screen)
         {
             Screen = screen;
-            if (screen != GameScreen.Pause && screen != GameScreen.Settings && screen != GameScreen.Help) Paused = false;
+            if (screen != GameScreen.Pause && screen != GameScreen.Settings && screen != GameScreen.Accessibility && screen != GameScreen.Help) Paused = false;
             if (screen != GameScreen.Cooking && screen != GameScreen.Register) Simulation.PlayerFocusOrderId = null;
             World.FocusPlayer(screen == GameScreen.Wardrobe);
             World.SetMode(screen == GameScreen.Cooking ? WorldMode.Cooking : screen == GameScreen.Build ? WorldMode.Build
-                : screen == GameScreen.Register ? WorldMode.Register : screen == GameScreen.Title ? WorldMode.Title : WorldMode.Overview);
+                : screen == GameScreen.Register ? WorldMode.Register : screen == GameScreen.Stall ? WorldMode.Stall : screen == GameScreen.Photo ? WorldMode.Photo : screen == GameScreen.Title ? WorldMode.Title : WorldMode.Overview);
+            UIKit.SetTheme(Simulation.State.theme);
             UI.Show(screen);
             UpdateMusic();
         }
@@ -142,7 +154,7 @@ namespace MalatangStory.Game
         public void BackToStore()
         {
             var phase = Simulation.State.phase;
-            Open(phase == DayPhase.Report ? GameScreen.Report : GameScreen.Store);
+            Open(phase == DayPhase.Report ? GameScreen.Report : Simulation.State.festivalStall && phase != DayPhase.Preparation ? GameScreen.Stall : GameScreen.Store);
         }
 
         /// <summary>注文票を押した時の動作。段階に応じて目的の場所へ歩いて操作する。</summary>
@@ -158,6 +170,9 @@ namespace MalatangStory.Game
                 case OrderStage.Waiting:
                 case OrderStage.Ordering:
                     World.Visit(Station.Register, () => OpenRegister(id));
+                    break;
+                case OrderStage.Delivering:
+                    UI.Toast("配達中です。到着まで " + Math.Max(0, order.deliveryDuration - order.deliverySeconds).ToString("0") + "秒", IconKind.ArrowRight);
                     break;
                 case OrderStage.Ready:
                     if (order.takeout) World.Visit(Station.Register, () => Simulation.Serve(id));
@@ -222,7 +237,7 @@ namespace MalatangStory.Game
 
         private void OpenKitchenForActive()
         {
-            bool Cookable(CustomerOrder o) => o.stage != OrderStage.Waiting && o.stage != OrderStage.Ordering && o.stage != OrderStage.Ready;
+            bool Cookable(CustomerOrder o) => o.stage != OrderStage.Delivering && o.stage != OrderStage.Waiting && o.stage != OrderStage.Ordering && o.stage != OrderStage.Ready;
             var order = Selected != null && Cookable(Selected) && Simulation.Active.Contains(Selected)
                 ? Selected : Simulation.Active.FirstOrDefault(o => Cookable(o) && !o.handledByStaff);
             if (order != null) OpenCooking(order.id);
@@ -237,12 +252,14 @@ namespace MalatangStory.Game
             catch (Exception e) { SaveMessage = "保存できませんでした：" + e.Message; Debug.LogWarning(SaveMessage); }
         }
 
-        public void SuspendToTitle() { Save(); Started = false; Paused = false; Open(GameScreen.Title); }
+        public void SuspendToTitle() { if (InChallenge) { LeaveChallenge(); return; } Save(); Started = false; Paused = false; Open(GameScreen.Title); }
 
         public void ApplySettings()
         {
             var s = Simulation.State;
+            UIKit.TextScale = s.textSize / 20f; UIKit.ReduceMotion = s.reducedMotion;
             QualitySettings.shadows = s.highQuality ? ShadowQuality.All : ShadowQuality.Disable;
+            Resources.Load<UnityEngine.Rendering.Universal.ScriptableRendererFeature>("RestaurantSSAO")?.SetActive(s.highQuality);
             Application.targetFrameRate = Application.isMobilePlatform ? (s.highQuality ? 60 : 30) : 60;
             Audio.EffectsVolume = s.effectsVolume;
             Audio.MusicVolume = s.musicVolume;
@@ -255,8 +272,9 @@ namespace MalatangStory.Game
             var s = Simulation.State;
             if (s.phase == DayPhase.Report) Audio.SetMusic(MusicMood.Report);
             else if (s.phase == DayPhase.Preparation) Audio.SetMusic(MusicMood.Preparation);
-            else if (s.daySeconds / RestaurantSimulation.DayDuration > .75f) Audio.SetMusic(MusicMood.Night);
-            else Audio.SetMusic(Simulation.Active.Count() >= 4 ? MusicMood.Busy : MusicMood.Business);
+            else if (BusinessRhythm.IsRush(s.daySeconds) || Simulation.Active.Count() >= 4) Audio.SetMusic(MusicMood.Busy);
+            else if (s.daySeconds / RestaurantSimulation.DayDuration > .7777f) Audio.SetMusic(MusicMood.Night);
+            else Audio.SetMusic(s.daySeconds / RestaurantSimulation.DayDuration > .55f ? MusicMood.Evening : MusicMood.Business);
         }
 
         private void Update()
@@ -266,6 +284,7 @@ namespace MalatangStory.Game
                 if (Keyboard.current.escapeKey.wasPressedThisFrame)
                 {
                     if (Screen == GameScreen.Store) { Paused = true; Open(GameScreen.Pause); }
+                    else if (Screen == GameScreen.Photo) EndPhoto();
                     else if (Screen == GameScreen.Register) BackToStore();
                     else if (Screen == GameScreen.Pause) { Paused = false; BackToStore(); }
                     else if (Screen != GameScreen.Title) BackToStore();
@@ -287,13 +306,18 @@ namespace MalatangStory.Game
             if (Started && Time.frameCount % 60 == 0) UpdateMusic();
             if (Started)
             {
-                int cooking = Simulation.Active.Count(o => o.stage == OrderStage.Heating);
-                Audio.SetAmbient(AmbientLoop.Boil, Simulation.State.phase == DayPhase.Open || Simulation.State.phase == DayPhase.Closing ? Mathf.Clamp01(.25f + cooking * .25f) : 0);
+                float boil = .12f;
+                foreach (var order in Simulation.State.orders)
+                    if (order.stage == OrderStage.Heating) boil += CookingFeel.Cues(order.heatSeconds / Math.Max(1, Simulation.TargetHeat(order))).Bubbles * .18f;
+                Audio.SetAmbient(AmbientLoop.Boil, Simulation.State.phase == DayPhase.Open || Simulation.State.phase == DayPhase.Closing ? Mathf.Clamp01(boil) : 0);
+                bool dry = Simulation.State.weather != "rain";
+                Audio.SetAmbient(AmbientLoop.Birds, dry && (Simulation.State.phase == DayPhase.Preparation || Simulation.State.daySeconds < 160) ? .18f : 0);
+                Audio.SetAmbient(AmbientLoop.Insects, dry && Seasons.Of(Simulation.State.day).Id == "summer" && Simulation.State.daySeconds >= 560 ? .18f : 0);
                 Audio.SetAmbient(AmbientLoop.Crowd, Mathf.Clamp01(Simulation.Seated.Count() * .12f + Simulation.Queue.Count() * .08f));
                 Audio.SetAmbient(AmbientLoop.Rain, Simulation.State.weather == "rain" && Screen != GameScreen.Title ? .55f : 0);
                 Audio.SetAmbient(AmbientLoop.Street, World.FirstPersonActive ? .45f : .22f);
             }
-            else { Audio.SetAmbient(AmbientLoop.Boil, 0); Audio.SetAmbient(AmbientLoop.Crowd, 0); Audio.SetAmbient(AmbientLoop.Rain, 0); Audio.SetAmbient(AmbientLoop.Street, Screen == GameScreen.Title ? .25f : 0); }
+            else { Audio.SetAmbient(AmbientLoop.Birds, 0); Audio.SetAmbient(AmbientLoop.Insects, 0); Audio.SetAmbient(AmbientLoop.Boil, 0); Audio.SetAmbient(AmbientLoop.Crowd, 0); Audio.SetAmbient(AmbientLoop.Rain, 0); Audio.SetAmbient(AmbientLoop.Street, Screen == GameScreen.Title ? .25f : 0); }
             if (dirty) { dirty = false; UI.Refresh(); }
         }
 
@@ -340,7 +364,7 @@ namespace MalatangStory.Game
                 case SimEventKind.HeatingStarted: Audio.Play(Sfx.PotSplash); World.Kitchen?.RebuildBowl(); break;
                 case SimEventKind.Dropped: Audio.Play(Sfx.IngredientDrop, .8f); World.Kitchen?.OnDropped((int)e.Value); break;
                 case SimEventKind.Drained: Audio.Play(Sfx.PotSplash, .8f); World.Kitchen?.RebuildBowl(); break;
-                case SimEventKind.Shaken: Audio.Play(Sfx.StrainerShake); World.Kitchen?.OnShake(); break;
+                case SimEventKind.Shaken: Audio.PlayPitched(Sfx.StrainerShake, 1 + (order?.handRhythm ?? 0) * .08f); World.Kitchen?.OnShake(); break;
                 case SimEventKind.SoupPoured: break;
                 case SimEventKind.Condiment: Audio.Play(Sfx.CondimentShake); World.Kitchen?.OnCondiment(e.Text); break;
                 case SimEventKind.Finished:
@@ -375,7 +399,7 @@ namespace MalatangStory.Game
                 case SimEventKind.Upgraded:
                 case SimEventKind.FurnitureChanged: Audio.Play(Sfx.Confirm, .8f); World.RebuildLayout(); break;
                 case SimEventKind.StaffChanged: Audio.Play(Sfx.Confirm, .8f); World.RebuildStaff(); break;
-                case SimEventKind.StaffAction: break;
+                case SimEventKind.StaffAction: if (e.Value == 1) UI.Toast(e.Text, IconKind.Heart, UIKit.Jade, 3); break;
                 case SimEventKind.Review: if (e.Value < 60) World.FloatAtCustomer(e.Id, "…", UIKit.Bad); break;
                 case SimEventKind.SpecialEvent: Audio.Play(Sfx.Notification); UI.Toast(e.Text, IconKind.Star, UIKit.Gold, 5f); break;
                 case SimEventKind.DayOpened: Audio.Play(Sfx.LevelUp, .5f); break;
@@ -397,7 +421,7 @@ namespace MalatangStory.Game
                     int newline = e.Text.IndexOf('\n');
                     UI.Announce(newline > 0 ? e.Text.Substring(0, newline) : e.Text, newline > 0 ? e.Text.Substring(newline + 1) : "", IconKind.Book, 12f);
                     break;
-                case SimEventKind.ThemeChanged: Audio.Play(Sfx.Confirm); World.ApplyTheme(e.Id); break;
+                case SimEventKind.ThemeChanged: UIKit.SetTheme(e.Id); Audio.Play(Sfx.Confirm); World.ApplyTheme(e.Id); break;
             }
         }
 

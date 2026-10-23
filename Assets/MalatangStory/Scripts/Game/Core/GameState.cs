@@ -13,7 +13,7 @@ namespace MalatangStory.Game
     /// 実際の流れ：Waiting →（レジ）Ordering → Selecting → Weighed → Heating → Drained → Finishing → Ready → Served。
     /// セルフ式はレジで量って会計するため Ordering から直接 Weighed へ進む。
     /// </summary>
-    public enum OrderStage { Waiting, Selecting, Heating, Drained, Ready, Served, Cancelled, Weighed, Finishing, Ordering }
+    public enum OrderStage { Waiting, Selecting, Heating, Drained, Ready, Served, Cancelled, Weighed, Finishing, Ordering, Delivering }
 
     /// <summary>支払い方法。</summary>
     public enum PaymentMethod { Cash, QrCode, Card }
@@ -113,6 +113,15 @@ namespace MalatangStory.Game
         public string review = "";
         public string visualState = "enter";
         public float visualSeconds;
+        public string wish = "", returnNote = "", bowlStyle = "";
+        public bool delivery, delivered;
+        public float deliverySeconds, deliveryDuration = 45;
+
+        public float counterSpillMl;
+        public int handRhythm;
+        public float lastHandShake = -1;
+        public bool usedVisibleGauge = true, expertBowl;
+        public List<GarnishStroke> garnishStrokes = new List<GarnishStroke>();
 
         /// <summary>提供済みまたは取消済みで、これ以上進まない注文か。</summary>
         public bool IsClosed => stage == OrderStage.Served || stage == OrderStage.Cancelled;
@@ -151,6 +160,8 @@ namespace MalatangStory.Game
         /// <summary>閉店時に人気へ加える増減（配信者など）。途中保存でも失われないよう日報に持つ。</summary>
         public float popularityDelta;
         public long ProfitFen => revenueFen + tipsFen + missionRewardsFen + prizeFen - foodCostFen - fixedCostFen - wagesFen - changeLossFen;
+        public AlbumEntry bestBowl;
+
         public float AverageQuality => served == 0 ? 0 : qualitySum / served;
     }
 
@@ -175,6 +186,11 @@ namespace MalatangStory.Game
         public float busySeconds;
         public string task = "";
         public string taskTarget = "";
+        public string id = "";
+        public int personality = 2;
+        public int praisedDay, mealDay;
+        public float fatigue, motivation = 70;
+        public bool resting;
     }
 
     /// <summary>常連客。好みと親密度を覚えている。</summary>
@@ -190,6 +206,8 @@ namespace MalatangStory.Game
         public List<string> likedCondiments = new List<string>();
         public List<string> dislikedCondiments = new List<string>();
         public int storyIndex;
+        public int answeredStory, lastVisitDay;
+        public bool concerned, introducedFriend;
     }
 
     /// <summary>名物メニュー。</summary>
@@ -204,6 +222,7 @@ namespace MalatangStory.Game
         public List<string> condiments = new List<string>();
         public int timesSold;
         public float qualitySum;
+        public AlbumEntry bestBowl;
     }
 
     /// <summary>設備のレベル。</summary>
@@ -294,10 +313,10 @@ namespace MalatangStory.Game
         public bool done;
     }
 
-    /// <summary>ゲーム全体の保存状態（保存形式 v9）。</summary>
+    /// <summary>ゲーム全体の保存状態（保存形式 v10）。</summary>
     [Serializable] public sealed class GameState
     {
-        public const int CurrentVersion = 9;
+        public const int CurrentVersion = 10;
         public int saveVersion = CurrentVersion;
         public string storeId = "store-001";
         public string storeName = "麻辣湯の小さなお店";
@@ -376,6 +395,31 @@ namespace MalatangStory.Game
         public string marketIngredient = "";
         /// <summary>当日の限定5個を購入済みか。</summary>
         public bool marketPurchased;
+
+        public int lastBrokenCombo;
+        public float comboRecoveryUntil;
+        public bool comboRecoveryUsed;
+        public List<int> comboMilestones = new List<int>();
+
+        public bool reducedMotion, snapCamera, leftHanded;
+        public int gaugeMode;
+        public string interactKey = "E", buildRotateKey = "T";
+        public PreparationState preparation = new PreparationState();
+        public List<HouseSoup> houseSoups = new List<HouseSoup>();
+        public string activeHouseSoup = "";
+        public int nextHouseSoup = 1;
+        public int nextStaffId = 1;
+        public int rushWarnings, walkInVisitors;
+        public bool deliveryEnabled, festivalStall;
+        public bool collectionBowl, collectionPennant, collectionTitle;
+        public int collectionRewardTier;
+        public List<string> stallMenu = new List<string>();
+        public int neighbourGiftDay, rivalContestDay, rivalResolvedDay, franchiseNumber;
+        public float rivalReputation = 50;
+        public string challengeMode = "", challengeRule = "";
+        public int challengeSeed;
+        public List<ChallengeRecord> challengeRecords = new List<ChallengeRecord>();
+        public List<string> introducedArchetypes = new List<string>();
 
         /// <summary>設備レベルを返す（未購入は鍋・保管棚が1、その他は0）。</summary>
         public int EquipmentLevel(string id)

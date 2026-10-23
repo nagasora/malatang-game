@@ -96,7 +96,8 @@ namespace MalatangStory.Game
         /// <summary>温度計。</summary>
         Thermometer,
         /// <summary>滴。</summary>
-        Drop
+        Drop,
+        Camera
     }
 
     /// <summary>店舗用テクスチャとUIスプライトを外部素材なしで生成する。</summary>
@@ -115,6 +116,18 @@ namespace MalatangStory.Game
             new Dictionary<Tuple<string, int, int, int, float, Color, Color>, Sprite>();
 
         /// <summary>指定した二色とシードから、継ぎ目と木目のある板材を生成する。</summary>
+        public static Texture2D SteamNoise(int size)
+        {
+            ValidateSize(size);
+            return Texture(Key(nameof(SteamNoise), size), size, size, false, (x, y) =>
+            {
+                float u = (x + .5f) / size * 2 - 1, v = (y + .5f) / size * 2 - 1;
+                float noise = ValueNoise(x * .17f, y * .11f, 711);
+                float alpha = Mathf.Exp(-(u * u * 1.4f + v * v * .7f) * 4) * (.3f + noise * .7f);
+                return new Color(1, 1, 1, Mathf.Clamp01(alpha));
+            });
+        }
+
         public static Texture2D WoodPlanks(int size, Color light, Color dark, int seed)
         {
             ValidateSize(size);
@@ -128,8 +141,8 @@ namespace MalatangStory.Game
                     int plank = Mathf.FloorToInt(v * 6f);
                     float seam = Mathf.Min(Fraction(v * 6f), 1f - Fraction(v * 6f));
                     float phase = Hash(plank, 0, seed) * Mathf.PI * 2f;
-                    float grain = Mathf.Sin(u * Mathf.PI * 64f + Mathf.Sin(v * Mathf.PI * 12f) * 3f + phase);
-                    float shade = 0.5f + grain * 0.16f + (Hash(x, y, seed) - 0.5f) * 0.1f;
+                    float grain = Mathf.Sin(u * Mathf.PI * 64f + Mathf.Sin(v * Mathf.PI * 4f + phase) * .35f + phase);
+                    float shade = 0.5f + grain * .035f + (Hash(x, y, seed) - 0.5f) * .025f;
                     float joint = Fraction(u * 3f + (plank % 2) * 0.5f);
                     if (seam < 0.025f || joint < 0.009f) shade = 0.05f;
                     return Color.Lerp(dark, light, Mathf.Clamp01(shade));
@@ -663,13 +676,19 @@ namespace MalatangStory.Game
                     g.Add(Cut(StarShape(V(48, 48), 36, 28, 12), Disk(V(48, 48), 13)));
                     break;
                 case IconKind.Cart:
-                    g.Add(Polyline(3, V(12, 78), V(23, 78), V(33, 34), V(73, 34)),
-                        Polyline(3, V(27, 65), V(82, 65), V(76, 43), V(31, 43)),
-                        Disk(V(38, 22), 6), Disk(V(69, 22), 6));
+                    g.Add(Polyline(3, V(20, 57), V(28, 24), V(73, 24), V(81, 57), V(20, 57)),
+                        Polyline(3, V(32, 57), V(42, 78), V(56, 78), V(69, 57)),
+                        Polyline(2, V(39, 28), V(36, 53)), Polyline(2, V(55, 27), V(55, 53)), Polyline(2, V(70, 29), V(73, 53)),
+                        Polyline(2, V(27, 41), V(76, 41)));
                     break;
                 case IconKind.Chart:
-                    g.Add(Polyline(3, V(16, 80), V(16, 16), V(82, 16)),
-                        Box(V(33, 35), V(6, 12)), Box(V(53, 46), V(6, 23)), Box(V(73, 58), V(6, 35)));
+                    g.Add(Polyline(3, V(23, 16), V(23, 80), V(79, 80), V(79, 16), V(23, 16)),
+                        Polyline(2, V(38, 18), V(38, 77)), Polyline(2, V(44, 64), V(70, 64)),
+                        Polyline(2, V(44, 48), V(70, 48)), Polyline(2, V(44, 32), V(70, 32)));
+                    break;
+                case IconKind.Camera:
+                    g.Add(Polyline(3, V(15, 23), V(15, 68), V(30, 68), V(36, 78), V(61, 78), V(67, 68), V(82, 68), V(82, 23), V(15, 23)),
+                        Cut(Disk(V(49, 45), 18), Disk(V(49, 45), 12)), Disk(V(73, 60), 3));
                     break;
                 case IconKind.Hammer:
                     g.Add(Polyline(6, V(27, 18), V(61, 61)),

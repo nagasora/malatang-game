@@ -9,19 +9,17 @@ using UnityEngine;
 
 namespace MalatangStory.Game
 {
-    /// <summary>
-    /// 保存データの読み書き。一時ファイルに書き切ってから置換し、チェックサムと1世代前のバックアップで破損から復旧する。
-    /// 旧形式（v1）は読み込み時に v2 へ移行する。未知の新しい形式は上書きせずエラーにする。
-    /// </summary>
     /// <summary>アプリより新しい形式の保存データ。破損とは区別し、復元にも上書きにも使わない。</summary>
     public sealed class FutureSaveVersionException : InvalidOperationException
     {
         public FutureSaveVersionException() : base("新しいバージョンの保存データです。アプリを更新してください。") { }
     }
 
+    /// <summary>保存を原子的に置換する。SHA-256 は破損検知用であり、改ざん防止ではない。</summary>
     public sealed class SaveRepository
     {
         [Serializable] private sealed class Envelope { public int version = GameState.CurrentVersion; public string payload, checksum; }
+        public const long MaximumFileBytes = 8 * 1024 * 1024;
         private readonly string path;
         public string LastError { get; private set; }
         public bool Exists => File.Exists(path) || File.Exists(path + ".bak");
@@ -29,9 +27,11 @@ namespace MalatangStory.Game
 
         /// <summary>主ファイルが新しい形式で、保存を禁止しているか。</summary>
         public bool BlockedByFutureVersion { get; private set; }
+        public bool BlockedByRecoveryFailure { get; private set; }
 
         public void Save(GameState state)
         {
+            if (BlockedByRecoveryFailure) throw new InvalidOperationException("壊れた保存データの退避が必要です。");
             if (BlockedByFutureVersion || IsFutureVersion(path)) { BlockedByFutureVersion = true; throw new FutureSaveVersionException(); }
             Validate(state);
             Directory.CreateDirectory(Path.GetDirectoryName(path));
@@ -47,8 +47,14 @@ namespace MalatangStory.Game
             if (File.Exists(path))
             {
                 // 壊れた主ファイルでバックアップを上書きしないよう、読めることを確かめてから世代を回す。
-                try { Read(path); File.Copy(path, path + ".bak", true); }
-                catch (Exception e) when (e is IOException || e is ArgumentException || e is InvalidOperationException) { }
+                bool readable = false;
+                try { Read(path); readable = true; }
+                catch (Exception e) when (Recoverable(e)) { }
+                if (readable)
+                {
+                    File.Copy(path, path + ".bak.tmp", true);
+                    Replace(path + ".bak.tmp", path + ".bak");
+                }
                 File.Replace(temporary, path, null);
             }
             else File.Move(temporary, path);
@@ -59,6 +65,7 @@ namespace MalatangStory.Game
         {
             LastError = null;
             BlockedByFutureVersion = false;
+            BlockedByRecoveryFailure = false;
             if (IsFutureVersion(path))
             {
                 // 新しい形式の主ファイルを古いバックアップで置き換えると進捗が消えるため、復元もしない。
@@ -75,10 +82,50 @@ namespace MalatangStory.Game
                     if (candidate != path) LastError = "直前のバックアップから復元しました。";
                     return state;
                 }
-                catch (Exception e) when (e is IOException || e is ArgumentException || e is InvalidOperationException)
+                catch (FutureSaveVersionException)
+                {
+                    BlockedByFutureVersion = true;
+                    LastError = new FutureSaveVersionException().Message;
+                    return null;
+                }
+                catch (Exception e) when (Recoverable(e))
                 { LastError = "保存データを読み込めませんでした：" + e.Message; }
             }
+            if (LastError != null)
+            {
+                try
+                {
+                    string stamp = DateTime.UtcNow.ToString("yyyyMMdd-HHmmss-fffffff") + "-" + Guid.NewGuid().ToString("N");
+                    foreach (string candidate in new[] { path, path + ".bak" })
+                        if (File.Exists(candidate)) File.Move(candidate, Path.Combine(Path.GetDirectoryName(path),
+                            Path.GetFileNameWithoutExtension(path) + ".corrupt-" + stamp + (candidate == path ? "" : "-backup") + ".json"));
+                    LastError = "保存データが壊れていたため退避しました。新しく始められます。";
+                }
+                catch (Exception e) when (Recoverable(e))
+                {
+                    BlockedByRecoveryFailure = true;
+                    LastError = "壊れた保存データを退避できません。保存を停止しました：" + e.Message;
+                }
+            }
             return null;
+        }
+
+        private static bool Recoverable(Exception e) => !(e is OutOfMemoryException) && !(e is StackOverflowException)
+            && !(e is AccessViolationException) && !(e is System.Threading.ThreadAbortException);
+
+        private static void Replace(string temporary, string destination)
+        {
+            if (File.Exists(destination)) File.Replace(temporary, destination, null);
+            else File.Move(temporary, destination);
+        }
+
+        private static string ReadBounded(string filename)
+        {
+            using (var stream = new FileStream(filename, FileMode.Open, FileAccess.Read, FileShare.Read))
+            {
+                if (stream.Length > MaximumFileBytes) throw new InvalidOperationException("保存ファイルが上限の8 MiBを超えています。");
+                using (var reader = new StreamReader(stream, Encoding.UTF8, true)) return reader.ReadToEnd();
+            }
         }
 
         /// <summary>ファイルがアプリより新しい保存形式か（読めない・壊れている場合は false）。</summary>
@@ -87,25 +134,25 @@ namespace MalatangStory.Game
             if (!File.Exists(filename)) return false;
             try
             {
-                var envelope = JsonUtility.FromJson<Envelope>(File.ReadAllText(filename));
+                var envelope = JsonUtility.FromJson<Envelope>(ReadBounded(filename));
                 if (envelope == null || envelope.payload == null || envelope.checksum != Hash(envelope.payload)) return false;
                 if (envelope.version > GameState.CurrentVersion) return true;
                 var state = JsonUtility.FromJson<GameState>(envelope.payload);
                 return state != null && state.saveVersion > GameState.CurrentVersion;
             }
-            catch (Exception e) when (e is IOException || e is ArgumentException) { return false; }
+            catch (Exception e) when (Recoverable(e)) { return false; }
         }
 
         private static GameState Read(string filename)
         {
-            var envelope = JsonUtility.FromJson<Envelope>(File.ReadAllText(filename));
+            var envelope = JsonUtility.FromJson<Envelope>(ReadBounded(filename));
             if (envelope == null || envelope.payload == null || envelope.checksum != Hash(envelope.payload))
                 throw new InvalidOperationException("保存データの形式またはチェックサムが不正です。");
-            if (envelope.version < 1 || envelope.version > GameState.CurrentVersion)
-                throw new InvalidOperationException("新しいバージョンの保存データです。アプリを更新してください。");
+            if (envelope.version < 1) throw new InvalidOperationException("保存形式の番号が不正です。");
+            if (envelope.version > GameState.CurrentVersion) throw new FutureSaveVersionException();
             var state = JsonUtility.FromJson<GameState>(envelope.payload);
             if (state == null) throw new InvalidOperationException("保存データが空です。");
-            if (state.saveVersion > GameState.CurrentVersion) throw new InvalidOperationException("新しいバージョンの保存データです。アプリを更新してください。");
+            if (state.saveVersion > GameState.CurrentVersion) throw new FutureSaveVersionException();
             SaveMigration.Migrate(state);
             Validate(state);
             return state;
@@ -121,7 +168,9 @@ namespace MalatangStory.Game
                 || s.stock == null || s.orders == null || s.report == null || s.ingredients == null
                 || s.ingredients.unlockedIds == null || s.ingredients.settledOrderIds == null || s.ingredients.settledRevenueFen < 0
                 || s.tutorialStep < 0 || s.tutorialStep > RestaurantSimulation.TutorialFinished
-                || s.shopLevel < 1 || s.shopLevel > Content.MaxShopLevel || s.experience < 0
+                || s.moneyFen < SaveLimits.MinimumMoney || s.moneyFen > SaveLimits.MaximumMoney
+                || s.orders.Count > SaveLimits.MaximumOrders || s.history == null || s.history.Count > DayGrade.HistoryLimit
+                || s.shopLevel < 1 || s.shopLevel > Content.MaxShopLevel || s.experience < 0 || s.experience > SaveLimits.MaximumExperience
                 || s.furniture == null || s.staff == null || s.regulars == null || s.signatures == null || s.equipment == null
                 || s.achievements == null || s.dirtyTables == null || s.stats == null || s.chef == null)
                 throw new InvalidOperationException("保存データに無効なゲーム状態があります。");
@@ -137,7 +186,7 @@ namespace MalatangStory.Game
                 || s.furniture.Select(f => f.uid).Distinct().Count() != s.furniture.Count)
                 throw new InvalidOperationException("保存データの内装が不正です。");
             if (s.staff.Any(m => m == null || !Enum.IsDefined(typeof(StaffRole), m.role) || m.trainingLevel < 1 || m.trainingLevel > 3)
-                || s.staff.Select(m => m.role).Distinct().Count() != s.staff.Count
+                || s.staff.Select(m => m.id).Distinct().Count() != s.staff.Count
                 || s.equipment.Any(e => e == null || Content.Equipment.All(d => d.Id != e.id) || e.level < 0 || e.level > Content.EquipmentById(e.id).MaxLevel)
                 || s.regulars.Any(r => r == null || string.IsNullOrEmpty(r.id) || r.favorites == null
                     || SaveMigration.HasUnknownCondiments(r.likedCondiments) || SaveMigration.HasUnknownCondiments(r.dislikedCondiments))
@@ -180,6 +229,16 @@ namespace MalatangStory.Game
                 s.mealRemains = new List<MealRemains>();
                 if (s.orders != null) foreach (CustomerOrder order in s.orders.Where(x => x != null)) { order.mealFinished = false; order.leftovers = new MealLeftoverResult(); }
             }
+            if (s.saveVersion <= 9)
+            {
+                s.rivalReputation = 50;
+                if (s.staff != null) foreach (var member in s.staff.Where(x => x != null)) member.motivation = 70;
+                s.reducedMotion = false; s.snapCamera = false; s.leftHanded = false; s.gaugeMode = 0;
+                s.interactKey = "E"; s.buildRotateKey = "T";
+                if (s.orders != null) foreach (var order in s.orders)
+                    if (order != null) { order.handRhythm = 0; order.lastHandShake = -1; order.usedVisibleGauge = true; order.expertBowl = false; }
+            }
+            SaveLimits.Normalize(s);
             Normalize(s);
             if (s.saveVersion >= GameState.CurrentVersion) return;
             if (s.saveVersion == 1) FromVersion1(s);

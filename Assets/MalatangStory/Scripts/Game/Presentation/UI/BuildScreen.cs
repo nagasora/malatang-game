@@ -127,7 +127,7 @@ namespace MalatangStory.Game
                 var def = Content.FurnitureById(selected.defId);
                 selectionText.text = def.Name + "\n売却で " + RestaurantSimulation.Money(def.PriceFen / 2) + " 戻ります";
             }
-            if (Keyboard.current != null && Keyboard.current.rKey.wasPressedThisFrame) rotation = 1 - rotation;
+            if (Keyboard.current != null && System.Enum.TryParse<UnityEngine.InputSystem.Key>(S.buildRotateKey, out var rotateKey) && Keyboard.current[rotateKey].wasPressedThisFrame) rotation = 1 - rotation;
             if (Keyboard.current != null && Keyboard.current.escapeKey.wasPressedThisFrame) { placingDef = null; movingUid = -1; }
             var pointer = Pointer.current;
             if (pointer == null) return;
