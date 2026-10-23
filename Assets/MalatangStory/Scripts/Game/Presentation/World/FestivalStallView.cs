@@ -1,4 +1,3 @@
-using System.Linq;
 using UnityEngine;
 namespace MalatangStory.Game
 {
@@ -33,10 +32,15 @@ namespace MalatangStory.Game
         private void Update()
         {
             if (app == null) return;
-            CustomerOrder heating = app.Simulation.Active.FirstOrDefault(x => x.stage == OrderStage.Heating);
+            CustomerOrder heating = null, ready = null;
+            foreach (var order in app.Simulation.State.orders)
+            {
+                if (heating == null && order.stage == OrderStage.Heating) heating = order;
+                if (ready == null && order.stage == OrderStage.Ready) ready = order;
+                if (heating != null && ready != null) break;
+            }
             float intensity = heating == null ? .08f : CookingFeel.Cues(heating.heatSeconds / Mathf.Max(1, app.Simulation.TargetHeat(heating))).Steam;
             EffectsFactory.SetIntensity(steam, intensity);
-            CustomerOrder ready = app.Simulation.Active.FirstOrDefault(x => x.stage == OrderStage.Ready);
             string id = ready?.id;
             if (id == shownOrder) return;
             shownOrder = id; if (bowl != null) Destroy(bowl);
