@@ -24,7 +24,7 @@ namespace MalatangStory.Game
         private const int CacheCapacity = 24;
         private const float BowlSize = .3f;
         private const float PieceScale = .8f * 1.35f * (BowlSize / .44f);
-        private static readonly Color StudioAmbient = new Color(.3f, .295f, .29f);
+        private static readonly Color StudioAmbient = new Color(.3f, .3f, .3f);
         private static readonly Dictionary<string, Texture2D> Images = new Dictionary<string, Texture2D>(StringComparer.Ordinal);
         private static readonly List<string> AccessOrder = new List<string>();
         private static readonly List<Light> StudioLights = new List<Light>();
@@ -34,14 +34,14 @@ namespace MalatangStory.Game
         private static bool capturing;
 
         /// <summary>
-        /// アルバムのスープ・辛さ・具材・調味料に対応する透明背景の画像を返します。
+        /// アルバムのスープ・辛さ・具材・調味料に対応する木の卓上背景の画像を返します。
         /// 同じ内容は同じ画像を共有します。呼び出し元で画像を破棄しないでください。
         /// </summary>
         /// <exception cref="ArgumentNullException">記録が null の場合。</exception>
-        public static Texture2D Get(AlbumEntry entry)
+        public static Texture2D Get(AlbumEntry entry, bool includeTable = true)
         {
             if (entry == null) throw new ArgumentNullException(nameof(entry));
-            return GetPortrait(entry.soup, entry.spice, entry.ingredients, entry.condiments, entry.garnishStrokes);
+            return GetPortrait(entry.soup, entry.spice, entry.ingredients, entry.condiments, entry.garnishStrokes, includeTable);
         }
 
         /// <summary>
@@ -93,7 +93,7 @@ namespace MalatangStory.Game
         }
 
         /// <summary>長さ付きの内容キーで画像を再利用し、成功した撮影だけを登録します。</summary>
-        private static Texture2D GetPortrait(string soupId, int spice, List<string> ingredients, List<string> condiments, List<GarnishStroke> strokes)
+        private static Texture2D GetPortrait(string soupId, int spice, List<string> ingredients, List<string> condiments, List<GarnishStroke> strokes, bool includeTable = true)
         {
             if (ingredients == null) throw new ArgumentException("具材一覧がありません。", nameof(ingredients));
             if (condiments == null) throw new ArgumentException("調味料一覧がありません。", nameof(condiments));
@@ -104,7 +104,7 @@ namespace MalatangStory.Game
             AppendListKey(keyBuilder, ingredients);
             AppendListKey(keyBuilder, condiments);
             GarnishStroke.AppendKey(keyBuilder, strokes);
-            string key = keyBuilder.ToString();
+            string key = (includeTable ? "photo:" : "cutout:") + keyBuilder;
             if (Images.TryGetValue(key, out Texture2D cached) && cached != null)
             {
                 TouchCache(key);
@@ -118,7 +118,7 @@ namespace MalatangStory.Game
             {
                 TrimCache(null, CacheCapacity - 1);
                 EnsureStudio();
-                image = Capture(soup, spice, ingredients, condiments, CustomerDirector.StableHash(key), strokes);
+                image = Capture(soup, spice, ingredients, condiments, CustomerDirector.StableHash(key), strokes, includeTable);
                 Images[key] = image;
                 TouchCache(key);
                 return image;
@@ -260,7 +260,7 @@ namespace MalatangStory.Game
                 foreach (Collider collider in piece.GetComponentsInChildren<Collider>(true)) collider.enabled = false;
                 IngredientView view = piece.GetComponent<IngredientView>();
                 if (view != null) { view.SetDoneness(1f); view.SetWet(1f); }
-                inputs.Add(new PlatingInput { Category = item.category, LocalBounds = bounds, RelativeScale = localScale });
+                inputs.Add(new PlatingInput { Category = item.category, LocalBounds = bounds, RelativeScale = localScale, WeightGrams = item.portionGrams });
                 pieces.Add(piece.transform);
             }
             BowlPlating.Arrange(inputs, soupHeight, seed, placements);
@@ -269,6 +269,7 @@ namespace MalatangStory.Game
                 PlatingPlacement placement = placements[index];
                 pieces[index].SetLocalPositionAndRotation(placement.Position, placement.Rotation);
                 pieces[index].localScale = Vector3.one * (localScale * placement.Scale);
+                pieces[index].GetComponent<IngredientView>()?.SetSoupLevel(bowl.transform.TransformPoint(Vector3.up * soupHeight).y, new Color(soup.R, soup.G, soup.B));
             }
         }
 
@@ -325,7 +326,7 @@ namespace MalatangStory.Game
         }
 
         /// <summary>同期撮影し、成功・失敗にかかわらず環境と照明を復元して一時リソースを解放します。</summary>
-        private static Texture2D Capture(SoupDefinition soup, int spice, List<string> ingredients, List<string> condiments, int seed, List<GarnishStroke> strokes)
+        private static Texture2D Capture(SoupDefinition soup, int spice, List<string> ingredients, List<string> condiments, int seed, List<GarnishStroke> strokes, bool includeTable)
         {
             GameObject model = null;
             RenderTexture target = null;
@@ -340,7 +341,19 @@ namespace MalatangStory.Game
                 model = new GameObject("Portrait Model") { hideFlags = HideFlags.DontSave };
                 model.transform.SetParent(studio.transform, false);
                 BuildBowl(model.transform, soup, spice, ingredients, condiments, seed, strokes);
-                FrameModel(IsolateModel(model));
+                Bounds bowlBounds = IsolateModel(model);
+                FrameModel(bowlBounds);
+                if (includeTable)
+                {
+                Material tableMaterial = MaterialLibrary.Textured(TextureFactory.WoodPlanks(128, new Color(.64f, .43f, .26f), new Color(.36f, .21f, .12f), 737), Color.white, .35f, new Vector2(2, 2));
+                var table = StoreBuilder.Part("Photo Table", StoreBuilder.RoundedBox(new Vector3(2, .02f, 2), .008f), tableMaterial, new Vector3(0, -.02f, 0), Vector3.one, model.transform, null, false);
+                table.layer = PortraitLayer;
+                var tableRenderer = table.GetComponent<Renderer>(); tableRenderer.renderingLayerMask = PortraitRenderingLayer; tableRenderer.shadowCastingMode = ShadowCastingMode.Off;
+                }
+                captureCamera.nearClipPlane = .01f; captureCamera.farClipPlane += 2;
+                var steam = EffectsFactory.Steam(model.transform, .25f); steam.transform.localPosition = new Vector3(0, bowlBounds.size.y * .5f, 0);
+                steam.gameObject.layer = PortraitLayer; steam.GetComponent<Renderer>().renderingLayerMask = PortraitRenderingLayer;
+                steam.Simulate(1.2f, true, true);
                 transparentBlends = new TransparentBlendState(model);
                 target = RenderTexture.GetTemporary(ImageSize, ImageSize, 24, RenderTextureFormat.ARGB32, RenderTextureReadWrite.Linear);
                 captureCamera.targetTexture = target;

@@ -44,6 +44,8 @@ namespace MalatangStory.Game
                 confirmNew = false; App.NewGame();
             }, App.Saves.Exists ? ButtonStyle.Secondary : ButtonStyle.Primary, 22, IconKind.Plus);
             newButton.GetComponent<RectTransform>().sizeDelta = new Vector2(0, 56);
+            var challenge = UIKit.Button(root, "チャレンジ", () => App.Open(GameScreen.Challenges), ButtonStyle.Gold, 20, IconKind.Star);
+            UIKit.Place(challenge.GetComponent<RectTransform>(), new Vector2(0, .5f), new Vector2(470, -210), new Vector2(250, 52));
             var help = UIKit.Button(menu, "遊び方", () => App.Open(GameScreen.Help), ButtonStyle.Secondary, 20, IconKind.Book);
             help.GetComponent<RectTransform>().sizeDelta = new Vector2(0, 50);
             var settings = UIKit.Button(menu, "設定", () => App.Open(GameScreen.Settings), ButtonStyle.Secondary, 20, IconKind.Gear);
@@ -52,7 +54,7 @@ namespace MalatangStory.Game
 
             message = UIKit.Outlined(UIKit.Label(root, "", 16, UIKit.Paper, TextAnchor.LowerLeft), new Color(0, 0, 0, .6f));
             UIKit.Place(message.rectTransform, new Vector2(0, 0), new Vector2(24, 16), new Vector2(900, 50));
-            var credit = UIKit.Outlined(UIKit.Label(root, "v" + Application.version + "　フォント：Noto Sans JP（SIL OFL 1.1）　音・3Dはすべて手続き生成", 13, UIKit.PaperDark, TextAnchor.LowerRight), new Color(0, 0, 0, .6f));
+            var credit = UIKit.Outlined(UIKit.Label(root, "v" + Application.version + "　フォント：Noto Sans JP / Zen Maru Gothic（SIL OFL 1.1）　音・3Dはすべて手続き生成", 13, UIKit.PaperDark, TextAnchor.LowerRight), new Color(0, 0, 0, .6f));
             UIKit.Place(credit.rectTransform, new Vector2(1, 0), new Vector2(-20, 14), new Vector2(700, 24));
         }
 

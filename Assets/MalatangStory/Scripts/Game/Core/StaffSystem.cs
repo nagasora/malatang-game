@@ -16,12 +16,19 @@ namespace MalatangStory.Game
 
         /// <summary>1作業の所要秒（研修レベルで短くなる）。</summary>
         public static float TaskSeconds(HiredStaff member)
-            => Content.StaffFor(member.role).BaseTaskSeconds * (1f - .2f * (Math.Max(1, member.trainingLevel) - 1));
+            => Content.StaffFor(member.role).BaseTaskSeconds * (1f - .2f * (Math.Max(1, member.trainingLevel) - 1))
+                * (member.personality == 0 ? .9f : member.personality == 1 ? 1.05f : 1f)
+                * (1 + member.fatigue * .005f + Math.Max(0, 50 - member.motivation) * .005f);
 
         public void Tick(float seconds)
         {
             foreach (var member in S.staff)
             {
+                if (member.resting)
+                {
+                    member.fatigue = Math.Max(0, member.fatigue - seconds * .2f); continue;
+                }
+                member.fatigue = Math.Min(100, member.fatigue + seconds * .02f);
                 if (member.busySeconds > 0)
                 {
                     member.busySeconds -= seconds;
@@ -31,7 +38,7 @@ namespace MalatangStory.Game
             }
         }
 
-        private bool Available(CustomerOrder o) => o.id != sim.PlayerFocusOrderId;
+        private bool Available(CustomerOrder o) => o.id != sim.PlayerFocusOrderId && !S.staff.Any(x => x.busySeconds > 0 && x.taskTarget == o.id);
 
         private void Assign(HiredStaff member)
         {
@@ -117,7 +124,7 @@ namespace MalatangStory.Game
         {
             var soup = Content.Soup(o.soup);
             if (!sim.Customers.AvailableSoups.Any(x => x.Id == soup.Id)) soup = Content.Soups[0];
-            float error = member.trainingLevel >= 3 ? 0 : member.trainingLevel == 2 ? 15 : 35;
+            float error = member.trainingLevel >= 3 || member.personality == 1 ? 0 : member.trainingLevel == 2 ? 15 : 35;
             float sign = CustomerDirector.StableHash(o.id) % 2 == 0 ? 1 : -1;
             sim.PourSoup(o.id, soup.Id, (soup.IdealMinMl + soup.IdealMaxMl) / 2 + sign * error);
             for (int i = 0; i < o.spice; i++) sim.AddCondiment(o.id, Content.ChiliOil);

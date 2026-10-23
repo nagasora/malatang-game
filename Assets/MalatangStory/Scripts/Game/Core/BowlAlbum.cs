@@ -18,15 +18,20 @@ namespace MalatangStory.Game
         public static bool Record(GameState s, CustomerOrder o)
         {
             if (o.quality < MinQuality || o.selected.Count == 0 || string.IsNullOrEmpty(o.chosenSoup)) return false;
-            var entry = new AlbumEntry
-            {
-                day = s.day, customerName = o.customerName ?? "", archetype = o.archetype ?? "", soup = o.chosenSoup, spice = o.chosenSpice,
-                quality = (int)Math.Round(o.quality), score = o.quality, seq = ++s.albumSeq, recipe = o.recipe ?? "", omakase = o.omakase,
-                ingredients = o.selected.ToList(), condiments = o.condiments.ToList(), pairings = o.pairings.ToList(), garnishStrokes = GarnishStroke.Copy(o.garnishStrokes),
-            };
+            var entry = Snapshot(s, o); entry.seq = ++s.albumSeq;
             s.album.Add(entry);
             Sort(s);
             return s.album.Contains(entry);
+        }
+
+        public static AlbumEntry Snapshot(GameState s, CustomerOrder o)
+        {
+            return new AlbumEntry
+            {
+                day = s.day, customerName = o.customerName ?? "", archetype = o.archetype ?? "", soup = o.chosenSoup, spice = o.chosenSpice,
+                quality = (int)Math.Round(o.quality), score = o.quality, seq = s.albumSeq, recipe = o.recipe ?? "", omakase = o.omakase,
+                ingredients = o.selected.ToList(), condiments = o.condiments.ToList(), pairings = o.pairings.ToList(), garnishStrokes = GarnishStroke.Copy(o.garnishStrokes),
+            };
         }
 
         /// <summary>

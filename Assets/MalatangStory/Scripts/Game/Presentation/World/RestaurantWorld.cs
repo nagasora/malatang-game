@@ -89,6 +89,7 @@ namespace MalatangStory.Game
         private bool firstPerson;
         private float lookYaw, lookPitch = 4;
         private bool playerHidden;
+        private readonly List<Vector3> markerSpots = new List<Vector3>();
         private readonly List<Transform> needMarkers = new List<Transform>();
 
         /// <summary>一人称視点で操作しているか（店内モードのときだけ有効）。</summary>
@@ -449,8 +450,12 @@ namespace MalatangStory.Game
         /// <summary>食事終了時に客の一杯を片付け前の器へ引き継ぐため消します。</summary>
         public void AgentsFinishMeal(string orderId) => agents.FinishMeal(orderId);
 
+        public void Talk(string orderId, float seconds) => agents.Talk(orderId, seconds);
         public void Speak(string orderId, string text, bool unhappy = false, float seconds = 3.2f)
-            => App.UI.Speech(orderId, () => agents.CustomerHead(orderId), text, seconds, unhappy);
+        {
+            agents.Talk(orderId, Mathf.Min(seconds, 2));
+            App.UI.Speech(orderId, () => agents.CustomerHead(orderId), text, seconds, unhappy);
+        }
 
         public void FloatAtCustomer(string orderId, string text, Color color)
         {
@@ -580,7 +585,7 @@ namespace MalatangStory.Game
         {
             var sim = App.Simulation;
             bool show = Mode == WorldMode.Overview && App.Started;
-            var spots = new List<Vector3>();
+            var spots = markerSpots; spots.Clear();
             if (show)
             {
                 if (sim.Queue.Any()) spots.Add(StoreLayout.RegisterTop + Vector3.up * 1.3f);
@@ -958,8 +963,8 @@ namespace MalatangStory.Game
                     break;
                 case WorldMode.Register:
                     // レジの内側から、カウンター越しにお客さんを見る（店主の目線）。
-                    position = StoreLayout.RegisterStaff + new Vector3(.55f, 1.58f, .15f);
-                    target = StoreLayout.RegisterCustomer + new Vector3(.55f, 1.05f, 0);
+                    position = StoreLayout.RegisterStaff + new Vector3(-.55f, 1.75f, .5f);
+                    target = (agents.CustomerHead(App.SelectedOrderId) ?? StoreLayout.RegisterCustomer + Vector3.up * 1.85f) + new Vector3(-.55f, -.3f, 0);
                     fov = 46;
                     break;
                 case WorldMode.Build:

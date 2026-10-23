@@ -173,22 +173,20 @@ namespace MalatangStory.Game
             Color oilBody = Color.Lerp(new Color(.64f, .31f, .025f), new Color(.52f, .055f, .008f), appearance.Spice / 5f);
             Color oilRim = new Color(.98f, .68f, .18f);
             bool mala = appearance.SoupId == "mala";
+            OilDroplet previous = default;
             for (int index = 0; index < appearance.OilDrops; index++)
             {
-                GarnishPlacement placement = SoupAppearance.Scatter(random, .84f);
-                float variation = (float)random.NextDouble();
-                float radius = mala
-                    ? (index % 9 == 0 ? .035f + variation * .014f : .009f + variation * .017f)
-                    : (index % 5 == 0 ? .072f + variation * .022f : .014f + variation * .03f);
-                radius *= 1f + appearance.Spice * .025f;
-                PaintOilDrop(pixels, placement.X, placement.Z, radius, oilBody, oilRim);
+                OilDroplet drop = OilDropletRules.Next(random, mala, appearance.Spice, previous, index > 0);
+                PaintOilDrop(pixels, drop.X, drop.Z, drop.Radius, oilBody, oilRim, drop.Aspect, drop.Angle);
+                previous = drop;
             }
         }
 
         /// <summary>濃い中心、明るい輪、偏った小反射を持つ一粒を合成します。</summary>
-        private static void PaintOilDrop(Color[] pixels, float centerX, float centerZ, float radius, Color body, Color rimColor)
+        private static void PaintOilDrop(Color[] pixels, float centerX, float centerZ, float radius, Color body, Color rimColor, float aspect = 1, float angle = 0)
         {
-            float extent = radius * 1.03f;
+            float extent = radius * Mathf.Max(aspect, 1 / aspect) * 1.03f;
+            float cos = Mathf.Cos(angle), sin = Mathf.Sin(angle);
             int left = PixelCoordinate(centerX - extent), right = PixelCoordinate(centerX + extent);
             int bottom = PixelCoordinate(centerZ - extent), top = PixelCoordinate(centerZ + extent);
             for (int y = bottom; y <= top; y++)
@@ -196,7 +194,9 @@ namespace MalatangStory.Game
                 {
                     float dx = (x / (float)(TextureSize - 1) * 2f - 1f - centerX) / radius;
                     float dz = (y / (float)(TextureSize - 1) * 2f - 1f - centerZ) / radius;
-                    float q = dx * dx + dz * dz;
+                    float ex = (dx * cos + dz * sin) / aspect;
+                    float ez = (-dx * sin + dz * cos) * aspect;
+                    float q = ex * ex + ez * ez;
                     if (q > 1.06f) continue;
                     float opacity = 1f - SmoothThreshold(.84f, 1.06f, q);
                     float rim = SmoothThreshold(.42f, .72f, q) * (1f - SmoothThreshold(.88f, 1.05f, q));

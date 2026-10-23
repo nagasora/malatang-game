@@ -27,9 +27,14 @@ namespace MalatangStory.Game
         private readonly RestaurantWorld world;
         private readonly Transform root;
         private readonly Dictionary<string, Actor> customers = new Dictionary<string, Actor>();
-        private readonly Dictionary<StaffRole, Actor> staff = new Dictionary<StaffRole, Actor>();
+        private readonly Dictionary<string, Actor> staff = new Dictionary<string, Actor>();
         private readonly List<GameObject> passBowls = new List<GameObject>();
-        private string passSignature = "";
+        private readonly HashSet<string> orderIds = new HashSet<string>();
+        private readonly List<string> staleIds = new List<string>();
+        private readonly List<CustomerOrder> queue = new List<CustomerOrder>();
+        private readonly List<CustomerOrder> waiting = new List<CustomerOrder>();
+        private readonly List<CustomerOrder> ready = new List<CustomerOrder>(4);
+        private readonly List<string> passIds = new List<string>(4);
 
         public AgentDirector(RestaurantWorld world, Transform parent)
         {
@@ -54,7 +59,12 @@ namespace MalatangStory.Game
         }
 
         /// <summary>客の位置（浮かぶ文字用）。</summary>
-        public Vector3? CustomerPosition(string orderId) => customers.TryGetValue(orderId, out var a) && a.Rig != null ? a.Rig.transform.position + Vector3.up * 1.6f : (Vector3?)null;
+        public Vector3? CustomerPosition(string orderId) => orderId != null && customers.TryGetValue(orderId, out var a) && a.Rig != null ? a.Rig.transform.position + Vector3.up * 1.6f : (Vector3?)null;
+
+        public void Talk(string id, float seconds)
+        {
+            if (id != null && customers.TryGetValue(id, out var actor) && actor.Rig != null) actor.Rig.Talk(seconds);
+        }
 
         /// <summary>客の反応を出す。</summary>
         public void React(string orderId, float quality)
@@ -69,11 +79,16 @@ namespace MalatangStory.Game
         {
             var sim = Sim;
             var orders = sim.State.orders;
-            var ids = new HashSet<string>(orders.Select(o => o.id));
-            foreach (var stale in customers.Keys.Where(id => !ids.Contains(id)).ToArray()) Remove(stale);
-            var queue = orders.Where(o => o.stage == OrderStage.Waiting).ToList();
-            var waiting = orders.Where(o => !o.takeout && o.seat < 0 && o.AwaitsBowl).ToList();
-            waiting.AddRange(orders.Where(o => o.takeout && o.AwaitsBowl));
+            orderIds.Clear(); queue.Clear(); waiting.Clear(); staleIds.Clear();
+            foreach (var order in orders)
+            {
+                orderIds.Add(order.id);
+                if (order.stage == OrderStage.Waiting) queue.Add(order);
+                if (!order.takeout && order.seat < 0 && order.AwaitsBowl) waiting.Add(order);
+            }
+            foreach (var order in orders) if (order.takeout && order.AwaitsBowl) waiting.Add(order);
+            foreach (string id in customers.Keys) if (!orderIds.Contains(id)) staleIds.Add(id);
+            foreach (string id in staleIds) Remove(id);
             int rows = DiningLayout.Rows(sim.State);
             foreach (var order in orders)
             {
@@ -121,7 +136,7 @@ namespace MalatangStory.Game
             => new Vector3((seed & 1) == 0 ? -9.2f : 9.2f, 0, StoreLayout.FrontZ(rows) - 1.9f - (seed % 3) * .3f);
 
         /// <summary>客の頭上の位置（吹き出し用）。</summary>
-        public Vector3? CustomerHead(string orderId) => customers.TryGetValue(orderId, out var a) && a.Rig != null ? a.Rig.transform.position + Vector3.up * (a.Seated ? 1.45f : 1.85f) : (Vector3?)null;
+        public Vector3? CustomerHead(string orderId) => orderId != null && customers.TryGetValue(orderId, out var a) && a.Rig != null ? a.Rig.transform.position + Vector3.up * (a.Seated ? 1.45f : 1.85f) : (Vector3?)null;
 
         /// <summary>食事終了イベントで元の器を即座に隠し、同じ席の二重表示を防ぎます。</summary>
         public void FinishMeal(string id)
@@ -190,9 +205,14 @@ namespace MalatangStory.Game
                 {
                     actor.Leaving = true;
                     if (order.stage == OrderStage.Cancelled) { rig.Mood = CharacterMood.Angry; rig.ShowEmote(EmoteKind.Anger, 2.5f); }
-                    else if (order.takeout) rig.ShowEmote(EmoteKind.Heart, 2f);
+                    else
+                    {
+                        rig.SetPose(CharacterPose.Wave);
+                        rig.ShowEmote(order.tipFen > 0 ? EmoteKind.Coin : EmoteKind.Heart, 2f);
+                    }
                 }
                 Stand(actor);
+                if (order.stage == OrderStage.Served && order.visualSeconds < 1.5f) rig.SetPose(CharacterPose.Wave);
                 Vector3 exit = StoreLayout.Door(rows) + Vector3.back * .8f;
                 if (!actor.ReachedDoor && Reached(actor, exit, .9f)) actor.ReachedDoor = true;
                 // 店を出たあとは来た方向の歩道へ歩き去る（歩道へ道が無い時は入口で消える）。
@@ -272,7 +292,7 @@ namespace MalatangStory.Game
             float patience = order.paidFen == 0 ? order.elapsed / Mathf.Max(1, order.patience) : order.elapsed / Mathf.Max(1, order.patience * 2);
             if (order.stage != OrderStage.Served)
             {
-                var mood = patience < .45f ? CharacterMood.Happy : patience < .75f ? CharacterMood.Neutral : patience < .95f ? CharacterMood.Impatient : CharacterMood.Angry;
+                var mood = patience < .3f ? CharacterMood.Happy : patience < .6f ? CharacterMood.Neutral : patience < .85f ? CharacterMood.Impatient : CharacterMood.Angry;
                 if (rig.Mood != mood) { rig.Mood = mood; if (mood == CharacterMood.Impatient && actor.EmoteCooldown <= 0) { rig.ShowEmote(EmoteKind.Sweat, 2f); actor.EmoteCooldown = 8; } }
                 if (stageChanged && order.stage == OrderStage.Waiting && actor.EmoteCooldown <= 0) { rig.ShowEmote(order.archetype == "critic" ? EmoteKind.Exclamation : EmoteKind.Question, 2f); actor.EmoteCooldown = 4; }
                 if (stageChanged && (order.stage == OrderStage.Weighed || (order.stage == OrderStage.Selecting && order.paidFen > 0))) rig.ShowEmote(EmoteKind.Coin, 1.5f);
@@ -298,12 +318,12 @@ namespace MalatangStory.Game
                 appearance.apron = true; appearance.apronColor = member.role == StaffRole.Cook ? 2 : member.role == StaffRole.Server ? 1 : 3;
                 appearance.hatStyle = member.role == StaffRole.Cook ? 1 : 2; appearance.accessory = 0;
                 var rig = CharacterFactory.Create(appearance, member.name, root);
-                Vector3 home = Home(member.role);
+                Vector3 home = Home(member.role) + Vector3.right * (Sim.State.staff.IndexOf(member) % 3) * .5f;
                 rig.transform.position = home;
                 var agent = rig.gameObject.AddComponent<NavMeshAgent>();
                 Configure(agent, 3.2f);
                 if (NavMesh.SamplePosition(home, out var hit, 2f, NavMesh.AllAreas)) agent.Warp(hit.position);
-                staff[member.role] = new Actor { Rig = rig, Agent = agent };
+                staff[member.id] = new Actor { Rig = rig, Agent = agent };
             }
         }
 
@@ -313,14 +333,14 @@ namespace MalatangStory.Game
         {
             foreach (var member in Sim.State.staff)
             {
-                if (!staff.TryGetValue(member.role, out var actor) || actor.Rig == null) continue;
+                if (!staff.TryGetValue(member.id, out var actor) || actor.Rig == null) continue;
                 EnsureOnNav(actor.Agent);
                 if (!actor.Agent.isOnNavMesh) continue;
                 actor.Agent.isStopped = paused;
                 if (paused) continue;
                 actor.Rig.SetMoveSpeed(actor.Agent.velocity.magnitude);
                 Vector3 target = Home(member.role);
-                var pose = CharacterPose.Idle;
+                var pose = member.resting ? CharacterPose.Sit : CharacterPose.Idle;
                 var order = Sim.Find(member.taskTarget);
                 switch (member.task)
                 {
@@ -350,10 +370,17 @@ namespace MalatangStory.Game
 
         private void UpdatePassBowls()
         {
-            var ready = Sim.State.orders.Where(o => o.stage == OrderStage.Ready && o.id != world.CarriedOrderId).Take(4).ToList();
-            string signature = string.Join(",", ready.Select(o => o.id));
-            if (signature == passSignature) return;
-            passSignature = signature;
+            ready.Clear();
+            foreach (var order in Sim.State.orders)
+                if (order.stage == OrderStage.Ready && order.id != world.CarriedOrderId)
+                {
+                    ready.Add(order);
+                    if (ready.Count == 4) break;
+                }
+            bool changed = ready.Count != passIds.Count;
+            for (int i = 0; !changed && i < ready.Count; i++) changed = ready[i].id != passIds[i];
+            if (!changed) return;
+            passIds.Clear(); foreach (var order in ready) passIds.Add(order.id);
             foreach (var b in passBowls) if (b != null) Object.Destroy(b);
             passBowls.Clear();
             for (int i = 0; i < ready.Count; i++)

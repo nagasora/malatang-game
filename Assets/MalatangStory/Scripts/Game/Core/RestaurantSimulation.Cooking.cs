@@ -37,6 +37,7 @@ namespace MalatangStory.Game
         {
             var o = Find(orderId);
             if (o == null || o.stage != OrderStage.Selecting || !Unlocks.IsUnlocked(ingredientId)) return false;
+            if (!ChallengeRules.AllowsIngredient(State, Catalog.Get(ingredientId))) return Fail("チャレンジで使えない具材です。");
             if (o.selected.Count >= MaxIngredientsPerBowl) return Fail("1杯の具材は" + MaxIngredientsPerBowl + "個までです。");
             if (o.selected.Count(x => x == ingredientId) >= Available(ingredientId, o)) return Fail(Catalog.Get(ingredientId).displayName + "は在庫切れです（他の注文で使用中を含む）。");
             o.selected.Add(ingredientId);
@@ -301,10 +302,12 @@ namespace MalatangStory.Game
                 o.report.total = Math.Min(100, o.report.total + CookingFeel.HandRhythmBonus);
                 o.report.comments.Add("リズムよく湯切りされて、口当たりがいい！");
             }
+            CustomerWishes.ApplyBonus(o, Catalog);
             Recipes.ApplyBonus(o);
             Pairings.ApplyBonus(o);
             MorningMarket.ApplyBonus(o, Catalog);
             if (o.omakase) o.report.total = Math.Min(o.report.total, Omakase.QualityCap(o, Catalog));
+            o.report.total = Math.Max(0, Math.Min(100, o.report.total + PreparationRules.Bonus(State, o.chosenSoup)));
             o.quality = o.report.total;
             o.expertBowl = !o.usedVisibleGauge && State.gaugeMode == 2 && !o.handledByStaff && o.quality >= 85;
             o.stage = OrderStage.Ready;
@@ -346,6 +349,10 @@ namespace MalatangStory.Game
             State.stats.bestDayServed = Math.Max(State.stats.bestDayServed, r.served);
             Recipes.RecordServed(this, o);
             Pairings.RecordServed(this, o);
+            var houseSoup = State.houseSoups.FirstOrDefault(x => x.id == State.activeHouseSoup && x.soup == o.chosenSoup);
+            if (houseSoup != null) houseSoup.served++;
+            if (State.report.bestBowl == null || o.quality >= State.report.bestBowl.score)
+                State.report.bestBowl = BowlAlbum.Snapshot(State, o);
             if (BowlAlbum.Record(State, o)) Emit(SimEventKind.AlbumAdded, o.id, (long)o.quality, "一杯アルバムに載りました（" + o.quality.ToString("0") + "点）");
             if (o.omakase && o.quality >= 85) State.stats.omakaseGreat++;
             foreach (string item in o.selected) LifetimeStats.Add(State.stats.ingredientsServed, item);
@@ -423,6 +430,7 @@ namespace MalatangStory.Game
                 State.regulars.Add(regular);
                 Emit(SimEventKind.Regular, regular.id, 1, o.customerName + "が常連になりました！");
             }
+            regular.lastVisitDay = State.day; regular.concerned = false;
             regular.visits++;
             regular.affinity = Math.Max(0, Math.Min(100, regular.affinity + (o.report.satisfaction - 60) / 4f));
             int story = (int)(regular.affinity / 25);

@@ -88,6 +88,8 @@ namespace MalatangStory.Game
         private Transform leftKnee;
         private Transform rightKnee;
         public float MotionLean;
+        private float talkingSeconds;
+        public void Talk(float seconds) { talkingSeconds = Mathf.Max(talkingSeconds, seconds); }
         private Transform handAnchor;
         private Transform leftLid;
         private Transform rightLid;
@@ -318,6 +320,7 @@ namespace MalatangStory.Game
             float walkRate = normalizedSpeed > 0f ? Mathf.Min(normalizedSpeed / 0.55f, 20f) : 1.4f;
             cycle = Mathf.Repeat(cycle + delta * walkRate * Mathf.PI * 2f, Mathf.PI * 2f);
             reactionTime = Mathf.Max(0f, reactionTime - delta);
+            talkingSeconds = Mathf.Max(0, talkingSeconds - delta);
             float blend = 1f - Mathf.Exp(-12f * delta);
             UpdateAppearanceItems();
             AnimatePose(blend, normalizedSpeed);
@@ -363,7 +366,9 @@ namespace MalatangStory.Game
             {
                 case CharacterPose.Eat:
                     float bite = Mathf.Repeat(mealSeconds, 3.5f);
-                    float lifting = bite < 1.3f ? Mathf.Sin(bite / 1.3f * Mathf.PI) : 0f;
+                    EatingStage mealStage = CookingFeel.MealStage(mealSeconds);
+                    float lifting = mealStage == EatingStage.Lift ? Mathf.Sin((bite - .8f) / .7f * Mathf.PI) : 0f;
+                    if (mealStage == EatingStage.Sip) { lifting = .7f; bodyTilt += 8f; }
                     rightArm = new Vector3(-78f - lifting * 35f, -41f, 0f);
                     leftArm.x = -55f;
                     bodyTilt += 4f;
@@ -452,7 +457,7 @@ namespace MalatangStory.Game
             RotateJoint(rightBrow, new Vector3(0f, 0f, -browAngle), blend);
             if (happyEyes != null) SetVisible(happyEyes, joyful && !eyesHidden && closure < 0.5f);
             int shape = joyful ? 0 : angry ? 3 : (int)mood;
-            bool chewing = pose == CharacterPose.Eat && Mathf.Sin(clock * 5f) > 0f;
+            bool chewing = pose == CharacterPose.Eat && CookingFeel.MealStage(mealSeconds) == EatingStage.Chew && Mathf.Sin(clock * 5f) > 0f;
             if (chewing) shape = 4;
             if (mouthFilter != null && mouthShapes != null && mouthShape != shape)
             {
@@ -460,6 +465,7 @@ namespace MalatangStory.Game
                 mouthShape = shape;
             }
             Vector3 target = mouthRestScale;
+            if (talkingSeconds > 0) target.y *= 1 + Mathf.Abs(Mathf.Sin(clock * 18)) * 1.2f;
             if (chewing) target.y *= 0.55f + Mathf.Max(0f, Mathf.Sin(clock * 5f)) * 0.45f;
             mouth.localScale = Vector3.Lerp(mouth.localScale, target, blend);
             RotateJoint(mouth, Vector3.zero, blend);

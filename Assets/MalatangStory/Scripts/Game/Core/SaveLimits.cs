@@ -13,6 +13,34 @@ namespace MalatangStory.Game
 
         public static void Normalize(GameState s)
         {
+            s.introducedArchetypes = Bound(s.introducedArchetypes, 30);
+            s.introducedArchetypes.RemoveAll(id => !Content.Archetypes.Any(x => x.Id == id));
+            if (s.challengeMode != ChallengeRules.Rush && s.challengeMode != ChallengeRules.Weekly) s.challengeMode = "";
+            s.challengeSeed = (int)Clamp(s.challengeSeed, 0, 1000000);
+            s.challengeRule = s.challengeMode.Length == 0 ? "" : ChallengeRules.Rule(s.challengeMode, s.challengeSeed);
+            s.rushWarnings = (int)Clamp(s.rushWarnings, 0, 3);
+            s.challengeRecords = Bound(s.challengeRecords, 32);
+            var challengeIds = new HashSet<string>();
+            s.challengeRecords.RemoveAll(x => x == null || string.IsNullOrEmpty(x.id) || x.id.Length > 80 || !challengeIds.Add(x.id));
+            foreach (var record in s.challengeRecords) { record.score = (int)Clamp(record.score, 0, 1000000); record.served = (int)Clamp(record.served, 0, MaximumOrders); record.lost = (int)Clamp(record.lost, 0, MaximumOrders); }
+            s.preparation ??= new PreparationState();
+            var preparation = s.preparation;
+            preparation.seconds = Finite(preparation.seconds, 0, 30); preparation.quality = Finite(preparation.quality, 0, 100);
+            preparation.bones = (int)Clamp(preparation.bones, 0, 5); preparation.spice = (int)Clamp(preparation.spice, 0, 5); preparation.oil = (int)Clamp(preparation.oil, 0, 5);
+            preparation.cuts = (int)Clamp(preparation.cuts, 0, 31); preparation.accurateCuts = (int)Clamp(preparation.accurateCuts, 0, preparation.cuts);
+            preparation.lastCutBeat = (int)Clamp(preparation.lastCutBeat, -1, 30);
+            if (!Content.Soups.Any(x => x.Id == preparation.soup)) preparation.soup = "mala";
+            s.houseSoups = Bound(s.houseSoups, PreparationRules.MaximumSoups);
+            var houseIds = new HashSet<string>();
+            s.houseSoups.RemoveAll(x => x == null || string.IsNullOrEmpty(x.id) || x.id.Length > 80 || !houseIds.Add(x.id) || !Content.Soups.Any(soup => soup.Id == x.soup));
+            foreach (var house in s.houseSoups)
+            {
+                house.name = PlayerText.Clean(house.name); house.quality = Finite(house.quality, 0, 100);
+                house.bones = (int)Clamp(house.bones, 0, 5); house.spice = (int)Clamp(house.spice, 0, 5); house.oil = (int)Clamp(house.oil, 0, 5);
+                house.served = (int)Clamp(house.served, 0, 1000000);
+            }
+            if (!s.houseSoups.Any(x => x.id == s.activeHouseSoup)) s.activeHouseSoup = "";
+            s.nextHouseSoup = Math.Max(1, Math.Min(s.nextHouseSoup, 1000000));
             s.moneyFen = Clamp(s.moneyFen, MinimumMoney, MaximumMoney);
             s.experience = (int)Clamp(s.experience, 0, MaximumExperience);
             s.day = (int)Clamp(s.day, 1, 1000000);
@@ -44,6 +72,8 @@ namespace MalatangStory.Game
             s.orders.RemoveAll(o => o == null || string.IsNullOrEmpty(o.id) || !orders.Add(o.id));
             foreach (var o in s.orders)
             {
+                if (!CustomerWishes.Kinds.Contains(o.wish)) o.wish = "";
+                o.returnNote = PlayerText.Clean(o.returnNote, 120);
                 o.garnishStrokes = GarnishStroke.Normalize(o.garnishStrokes);
                 o.customerName = PlayerText.Clean(o.customerName, 32); o.review = PlayerText.Clean(o.review, 300);
                 o.reaction = PlayerText.Clean(o.reaction, 300);
@@ -86,8 +116,25 @@ namespace MalatangStory.Game
             foreach (var r in s.regulars) { r.name = PlayerText.Clean(r.name, 32); r.favorites = Bound(r.favorites, MaximumItems); r.favorites.RemoveAll(x => !ids.Contains(x)); r.affinity = Finite(r.affinity, 0, 100); }
             s.signatures = Bound(s.signatures, 3); s.signatures.RemoveAll(d => d == null || string.IsNullOrEmpty(d.id));
             foreach (var d in s.signatures) { d.name = PlayerText.Clean(d.name, 32); d.ingredients = Bound(d.ingredients, MaximumItems); d.ingredients.RemoveAll(x => !ids.Contains(x)); }
-            s.staff = Bound(s.staff, 3); s.staff.RemoveAll(m => m == null);
-            foreach (var m in s.staff) { m.name = PlayerText.Clean(m.name, 32); m.busySeconds = Finite(m.busySeconds, 0, 10000); }
+            foreach (var regular in s.regulars)
+            {
+                regular.lastVisitDay = (int)Clamp(regular.lastVisitDay, 0, s.day);
+                regular.answeredStory = (int)Clamp(regular.answeredStory, 0, regular.storyIndex);
+            }
+            s.staff = Bound(s.staff, 9); s.staff.RemoveAll(m => m == null);
+            var staffIds = new HashSet<string>();
+            s.nextStaffId = (int)Clamp(s.nextStaffId, 1, 100000000);
+            for (int i = 0; i < s.staff.Count; i++)
+            {
+                var m = s.staff[i];
+                m.name = PlayerText.Clean(m.name, 32); m.busySeconds = Finite(m.busySeconds, 0, 10000);
+                m.id = PlayerText.Clean(m.id, 80);
+                if (m.id.Length == 0 || !staffIds.Add(m.id))
+                { do { m.id = "staff-" + s.nextStaffId++; } while (!staffIds.Add(m.id)); }
+                m.fatigue = Finite(m.fatigue, 0, 100); m.motivation = Finite(m.motivation, 0, 100);
+                m.personality = (int)Clamp(m.personality, 0, 2);
+                m.praisedDay = (int)Clamp(m.praisedDay, 0, s.day); m.mealDay = (int)Clamp(m.mealDay, 0, s.day);
+            }
             s.history = Bound(s.history, DayGrade.HistoryLimit, true);
             s.recentReviews = Texts(s.recentReviews, 20, 300);
             s.report ??= new DailyReport(); s.report.reviews = Texts(s.report.reviews, 50, 300); s.report.highlights = Texts(s.report.highlights, 50, 300);
@@ -112,6 +159,16 @@ namespace MalatangStory.Game
                 entry.garnishStrokes = GarnishStroke.Normalize(entry.garnishStrokes);
                 entry.customerName = PlayerText.Clean(entry.customerName, 32);
                 entry.ingredients = Bound(entry.ingredients, MaximumItems); entry.condiments = Bound(entry.condiments, MaximumItems);
+            }
+            if (s.report?.bestBowl != null)
+            {
+                var bowl = s.report.bestBowl;
+                bowl.ingredients = Bound(bowl.ingredients, MaximumItems); bowl.ingredients.RemoveAll(x => !ids.Contains(x));
+                bowl.condiments = Bound(bowl.condiments, MaximumItems); bowl.condiments.RemoveAll(x => !Content.Condiments.Any(c => c.Id == x));
+                bowl.garnishStrokes = GarnishStroke.Normalize(bowl.garnishStrokes);
+                bowl.pairings = Bound(bowl.pairings, MaximumItems); bowl.customerName = PlayerText.Clean(bowl.customerName, 32);
+                bowl.score = Finite(bowl.score, 0, 100); bowl.quality = (int)Clamp(bowl.quality, 0, 100);
+                if (!Content.Soups.Any(x => x.Id == bowl.soup) || bowl.ingredients.Count == 0) s.report.bestBowl = null;
             }
             s.dirtyTables = Bound(s.dirtyTables, 104); s.mealRemains = Bound(s.mealRemains, MaximumOrders);
         }

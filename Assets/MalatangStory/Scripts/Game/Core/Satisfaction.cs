@@ -57,7 +57,7 @@ namespace MalatangStory.Game
             if (o.serviceBonus >= 5) o.report.comments.Add("レジの対応も気持ちよかった。");
             else if (o.serviceBonus <= -5) o.report.comments.Add("レジでのやり取りがちょっと…");
 
-            o.tipFen = Tip(o.paidFen, satisfaction, archetype.Generosity * Skills.Tip(s), s.combo);
+            o.tipFen = Tip(o.paidFen, satisfaction, archetype.Generosity * Skills.Tip(s) * BusinessRhythm.RewardMultiplier(s.daySeconds), s.combo);
             if (o.tipFen > 0)
             {
                 s.moneyFen += o.tipFen; r.tipsFen += o.tipFen; s.stats.tipsFen += o.tipFen;

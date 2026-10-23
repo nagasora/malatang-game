@@ -119,6 +119,8 @@ namespace MalatangStory.Game
 
             float ambienceBonus = Math.Min(.3f, Math.Max(0, DiningLayout.Ambience(S)) * .01f);
             order.patience = archetype.Patience * (1 + ambienceBonus) * (regular != null ? 1.2f : 1f) * Skills.Patience(S) * (S.tutorialComplete ? 1f : 10f);
+            CustomerWishes.Assign(S, order, regular, random, sim.Catalog);
+            ChallengeRules.ApplyOrder(S, order, sim.Catalog);
             if (order.style == OrderStyle.SelfServe) SelectAll(order);
             S.nextOrderNumber++;
             return order;
@@ -181,6 +183,7 @@ namespace MalatangStory.Game
                 var methods = new[] { (PaymentMethod.Cash, archetype.CashWeight), (PaymentMethod.QrCode, archetype.QrWeight), (PaymentMethod.Card, archetype.CardWeight) };
                 o.payment = methods.Sum(m => m.Item2) <= 0 ? PaymentMethod.Cash : Weighted(random, methods, m => m.Item2).Item1;
             }
+            if (S.challengeRule == "cash") o.payment = PaymentMethod.Cash;
             o.tenderedFen = o.payment == PaymentMethod.Cash ? Tender(o.billFen, random, !S.tutorialComplete) : 0;
         }
 
@@ -210,7 +213,7 @@ namespace MalatangStory.Game
         {
             float fraction = S.daySeconds / RestaurantSimulation.DayDuration;
             bool nightMarket = S.dailyEvent == "night_market" && fraction > .55f;
-            var pool = Content.Archetypes.Where(x => x.SpawnWeight > 0 && x.MinShopLevel <= S.shopLevel).ToArray();
+            var pool = Content.Archetypes.Where(x => x.SpawnWeight > 0 && (x.MinShopLevel <= S.shopLevel || S.introducedArchetypes.Contains(x.Id)) && (S.challengeRule != "spice5" || !x.Child)).ToArray();
             return Weighted(random, pool, x => x.SpawnWeight * x.HourWeight(fraction) * (nightMarket && (x.Id == "couple" || x.Id == "drunk" || x.Id == "tourist") ? 2f : 1f)).Id;
         }
 

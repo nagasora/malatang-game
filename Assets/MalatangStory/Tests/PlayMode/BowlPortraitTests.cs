@@ -97,17 +97,20 @@ namespace MalatangStory.Tests
                 AlbumEntry entry = Entry();
                 entry.soup = soupId; entry.spice = 0;
                 entry.ingredients.Clear(); entry.condiments.Clear();
-                Texture2D image = BowlPortrait.Get(entry);
+                Texture2D image = BowlPortrait.Get(entry, false);
+                Texture2D photo = BowlPortrait.Get(entry);
+                Assert.AreNotSame(image, photo);
+                Assert.Greater(ReadPortraitPixels(photo)[0].a, .99f, "料理写真には木目の卓上背景を含める");
                 Color[] pixels = ReadPortraitPixels(image);
                 int left = image.width, right = -1, opaque = 0, saturated = 0;
                 for (int index = 0; index < pixels.Length; index++)
                 {
                     Color pixel = pixels[index];
                     if (pixel.a < .99f) continue;
-                    int x = index % image.width;
-                    left = Mathf.Min(left, x); right = Mathf.Max(right, x);
                     opaque++;
                     if (Mathf.Max(pixel.r, Mathf.Max(pixel.g, pixel.b)) >= .995f) saturated++;
+                    int x = index % image.width;
+                    left = Mathf.Min(left, x); right = Mathf.Max(right, x);
                 }
                 Assert.Greater(opaque, 0, soupId);
                 Assert.Greater((right - left + 1f) / image.width, .76f, "器が枠内で小さくなり過ぎない");

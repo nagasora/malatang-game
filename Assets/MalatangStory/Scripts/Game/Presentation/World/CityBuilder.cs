@@ -133,6 +133,12 @@ namespace MalatangStory.Game
                         g.Box(new Vector3(x, -.061f, front - 4.25f), new Vector3(2.65f, .032f, .55f), frost);
                         g.Box(new Vector3(x + .2f, -.061f, front - 10.95f), new Vector3(2.65f, .032f, .55f), frost);
                     }
+                    Material slush = MaterialLibrary.Lit(new Color(.48f, .46f, .43f), .35f);
+                    for (int lane = 0; lane < 2; lane++)
+                        for (int track = -1; track <= 1; track += 2)
+                            g.Box(new Vector3(0, -.035f, front - 5.5f - lane * 4 + track * .55f), new Vector3(70, .015f, .22f), slush);
+                    for (int step = 0; step < 48; step++)
+                        g.Box(new Vector3(-12 + step * .5f, .055f, front - 1.4f + (step % 2) * .18f), new Vector3(.14f, .015f, .27f), slush, Quaternion.Euler(0, 80, 0));
                     for (int side = -1; side <= 1; side += 2)
                     {
                         g.Box(new Vector3(side * 15, .44f, front - 3.1f), new Vector3(2.5f, .075f, .62f), frost);
@@ -205,13 +211,32 @@ namespace MalatangStory.Game
         /// <summary>一階店舗と階ごとの窓、ベランダ、室外機、雨どいを作ります。</summary>
         private void BuildBuilding(CityGeometry g, float x, float edge, float width, float depth, int style, bool opposite, bool labeled)
         {
-            int floors = 3 + random.Next(3);
+            var lot = StreetVisualRules.Lot(4107, style);
+            width *= lot.Width;
+            int floors = lot.Floors;
             float height = floors * 2.6f + .4f;
             float direction = opposite ? -1 : 1;
             float centerZ = edge + direction * depth * .5f;
             Material facade = facades[style % facades.Length];
             g.Box(new Vector3(x, height * .5f, centerZ), new Vector3(width, height, depth), facade);
             g.Box(new Vector3(x, height + .1f, centerZ), new Vector3(width + .18f, .25f, depth + .2f), concrete);
+            if (lot.Roof == 1)
+            {
+                for (int side = -1; side <= 1; side += 2)
+                    g.Box(new Vector3(x + side * width * .245f, height + .55f, centerZ), new Vector3(width * .55f, .16f, depth + .5f), red, Quaternion.Euler(0, 0, -side * 16));
+            }
+            else if (lot.Roof == 2)
+                g.Cylinder(new Vector3(x - width * .22f, height + .65f, centerZ), .72f, 1.1f, metal);
+            if (labeled)
+            {
+                g.Box(new Vector3(x + width * .38f, .25f, edge - direction * .65f), new Vector3(.6f, .5f, .5f), style % 2 == 0 ? green : white);
+                g.Sphere(new Vector3(x + width * .38f, .72f, edge - direction * .65f), new Vector3(.7f, .6f, .6f), green);
+                for (int crate = 0; crate < style % 3; crate++)
+                    g.Box(new Vector3(x - width * .35f, .2f + crate * .38f, edge - direction * .65f), new Vector3(.75f, .35f, .55f), concrete);
+                if (style % 3 == 1)
+                    for (int panel = -2; panel <= 2; panel++)
+                        g.Box(new Vector3(x + panel * .35f, 1.9f, edge - direction * .42f), new Vector3(.32f, .7f, .04f), green);
+            }
             g.Box(new Vector3(x, 1.2f, edge - direction * .04f), new Vector3(width - .6f, 2.35f, .12f), dark);
             g.Box(new Vector3(x, 1.2f, edge - direction * .12f), new Vector3(width - 1.2f, 1.75f, .04f), windows);
             for (int col = -1; col <= 1; col++)
@@ -234,8 +259,8 @@ namespace MalatangStory.Game
                 for (int col = -1; col <= 1; col++)
                 {
                     float wx = x + col * width * .28f;
-                    g.Box(new Vector3(wx, y, edge - direction * .07f), new Vector3(1.42f, 1.55f, .12f), dark);
-                    g.Box(new Vector3(wx, y, edge - direction * .15f), new Vector3(1.23f, 1.33f, .04f), (floor + col + style) % 4 == 0 ? dark : windows);
+                    g.Box(new Vector3(wx, y, edge - direction * .07f), new Vector3(lot.Windows == 1 ? 1.1f : 1.55f, 1.55f, .12f), dark);
+                    g.Box(new Vector3(wx, y, edge - direction * .15f), new Vector3(lot.Windows == 1 ? .94f : 1.37f, 1.33f, .04f), (floor + col + style) % 4 == 0 ? dark : windows);
                     g.Box(new Vector3(wx, y, edge - direction * .19f), new Vector3(.045f, 1.4f, .04f), metal);
                 }
                 g.Box(new Vector3(x, y - .85f, edge - direction * .32f), new Vector3(width - .6f, .12f, .78f), concrete);
@@ -244,6 +269,9 @@ namespace MalatangStory.Game
                     g.Box(new Vector3(x + bar * .83f, y - .59f, edge - direction * .68f), new Vector3(.035f, .5f, .035f), metal);
                 g.Box(new Vector3(x + width * .35f, y - .58f, edge - direction * .4f), new Vector3(.78f, .43f, .45f), white);
                 g.Box(new Vector3(x + width * .35f, y - .58f, edge - direction * .64f), new Vector3(.55f, .26f, .025f), dark);
+                if ((style + floor) % 3 == 0)
+                    for (int garment = 0; garment < 3; garment++)
+                        g.Box(new Vector3(x - .6f + garment * .45f, y - .15f, edge - direction * .75f), new Vector3(.3f, .45f, .035f), garment % 2 == 0 ? white : red);
             }
             g.Cylinder(new Vector3(x - width * .46f, height * .5f, edge - direction * .16f), .055f, height, metal);
             g.Box(new Vector3(x + .5f, height + .42f, centerZ), new Vector3(1.1f, .65f, .8f), metal);

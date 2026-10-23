@@ -8,7 +8,7 @@ using UnityEngine.UI;
 namespace MalatangStory.Game
 {
     /// <summary>画面の種類。</summary>
-    public enum GameScreen { Title, Store, Cooking, Shop, Management, Build, Report, Morning, Pause, Settings, Wardrobe, Help, Register, Collection, Accessibility }
+    public enum GameScreen { Title, Store, Cooking, Shop, Management, Build, Report, Morning, Pause, Settings, Wardrobe, Help, Register, Collection, Accessibility, Preparation, Challenges }
 
     /// <summary>
     /// 画面の基底クラス。Build で一度だけ部品を作り、以後は Refresh（状態変化時）と Tick（毎フレーム）で中身だけ更新する。
@@ -63,7 +63,16 @@ namespace MalatangStory.Game
         private CanvasScaler scaler;
         private UIScreen current;
         private HudView hud;
-        private readonly List<(RectTransform rt, float age, float life)> toasts = new List<(RectTransform, float, float)>();
+        private sealed class ToastItem
+        {
+            public RectTransform Rect;
+            public float Age, Life;
+            public string Message;
+            public IconKind Icon;
+            public Color? Accent;
+        }
+        private readonly List<ToastItem> toasts = new List<ToastItem>();
+        private int ToastCapacity => ToastAtBottom || announcement != null || safe.rect.height < 650 ? 1 : 2;
         private readonly List<(RectTransform rt, Vector3 world, float age, float life)> popups = new List<(RectTransform, Vector3, float, float)>();
         private readonly Queue<(string message, IconKind icon, Color? accent, float seconds)> pendingToasts = new Queue<(string, IconKind, Color?, float)>();
         private readonly Vector3[] overlayCorners = new Vector3[4];
@@ -152,6 +161,8 @@ namespace MalatangStory.Game
                 case GameScreen.Pause: return new PauseScreen();
                 case GameScreen.Settings: return new SettingsScreen();
                 case GameScreen.Accessibility: return new AccessibilityScreen();
+                case GameScreen.Preparation: return new PreparationScreen();
+                case GameScreen.Challenges: return new ChallengeScreen();
                 case GameScreen.Wardrobe: return new WardrobeScreen();
                 case GameScreen.Help: return new HelpScreen();
                 case GameScreen.Register: return new RegisterScreen();
@@ -173,24 +184,24 @@ namespace MalatangStory.Game
             if (string.IsNullOrEmpty(message)) return;
             for (int i = 0; i < toasts.Count; i++)
             {
-                var label = toasts[i].rt != null ? toasts[i].rt.GetComponentInChildren<Text>() : null;
-                if (label != null && label.text == message) { toasts[i] = (toasts[i].rt, 0, Mathf.Max(toasts[i].life, seconds)); return; }
+                if (toasts[i].Message == message) { toasts[i].Age = 0; toasts[i].Life = Mathf.Max(toasts[i].Life, seconds); return; }
             }
             foreach (var pending in pendingToasts) if (pending.message == message) return;
-            if (toasts.Count >= (ToastAtBottom ? 1 : 2))
+            if (toasts.Count >= ToastCapacity)
             {
                 pendingToasts.Enqueue((message, icon, accent, seconds));
                 return;
             }
             var panel = UIKit.Panel(toastLayer, new Color(.16f, .11f, .09f, .92f), 18, true, "Toast");
-            var rt = UIKit.Place(panel.rectTransform, new Vector2(.5f, 1), new Vector2(0, ToastAtBottom ? -(safe.rect.height - 60) : -260), new Vector2(Mathf.Min(520, safe.rect.width - 32), 52));
+            Rect bounds = OverlayLayout.ToastRect(safe.rect, app.Screen, 0, ToastAtBottom);
+            var rt = UIKit.Place(panel.rectTransform, new Vector2(.5f, 1), new Vector2(bounds.center.x - safe.rect.center.x, bounds.center.y - safe.rect.yMax), bounds.size);
             var iconImage = UIKit.Icon(rt, icon, accent ?? UIKit.Gold);
             UIKit.Place(iconImage.rectTransform, new Vector2(0, .5f), new Vector2(14, 0), new Vector2(30, 30));
             var text = UIKit.Label(rt, message, 19, UIKit.Paper, TextAnchor.MiddleLeft);
             UIKit.Fill(text.rectTransform, 54, 14, 4, 4);
             panel.gameObject.AddComponent<PopIn>().Duration = .22f;
             foreach (var graphic in panel.GetComponentsInChildren<Graphic>()) graphic.raycastTarget = false;
-            toasts.Add((rt, 0, seconds));
+            toasts.Add(new ToastItem { Rect = rt, Life = seconds, Message = message, Icon = icon, Accent = accent });
         }
 
         private RectTransform announcement;
@@ -231,9 +242,10 @@ namespace MalatangStory.Game
 
         private void ClearToasts()
         {
-            foreach (var t in toasts) if (t.rt != null) Destroy(t.rt.gameObject);
+            foreach (var t in toasts) if (t.Rect != null) Destroy(t.Rect.gameObject);
             toasts.Clear();
             pendingToasts.Clear();
+            if (announcement != null) Destroy(announcement.gameObject);
         }
 
         /// <summary>3D 空間の位置に、浮かび上がって消える文字を出す（売上・品質など）。</summary>
@@ -305,14 +317,22 @@ namespace MalatangStory.Game
             bool modal = ToastAtBottom;
             if (popupLayer.gameObject.activeSelf == modal) popupLayer.gameObject.SetActive(!modal);
 
+            while (toasts.Count > ToastCapacity)
+            {
+                ToastItem item = toasts[toasts.Count - 1];
+                int waiting = pendingToasts.Count;
+                pendingToasts.Enqueue((item.Message, item.Icon, item.Accent, Mathf.Max(.5f, item.Life - item.Age)));
+                for (int i = 0; i < waiting; i++) pendingToasts.Enqueue(pendingToasts.Dequeue());
+                item.Rect.gameObject.SetActive(false); Destroy(item.Rect.gameObject); toasts.RemoveAt(toasts.Count - 1);
+            }
             for (int i = toasts.Count - 1; i >= 0; i--)
             {
                 var t = toasts[i];
-                t.age += dt;
-                if (t.rt == null || t.age > t.life) { if (t.rt != null) Destroy(t.rt.gameObject); toasts.RemoveAt(i); continue; }
+                t.Age += dt;
+                if (t.Rect == null || t.Age > t.Life) { if (t.Rect != null) Destroy(t.Rect.gameObject); toasts.RemoveAt(i); continue; }
                 toasts[i] = t;
             }
-            if (pendingToasts.Count > 0 && toasts.Count < (ToastAtBottom ? 1 : 2))
+            if (pendingToasts.Count > 0 && toasts.Count < ToastCapacity)
             {
                 var pending = pendingToasts.Dequeue();
                 Toast(pending.message, pending.icon, pending.accent, pending.seconds);
@@ -320,14 +340,12 @@ namespace MalatangStory.Game
             for (int i = 0; i < toasts.Count; i++)
             {
                 var t = toasts[i];
-                float targetY = ToastAtBottom ? -(safe.rect.height - 60) : -(safe.rect.height - 236 - i * 58);
-                var pos = t.rt.anchoredPosition;
-                pos.y = targetY;
-                t.rt.sizeDelta = new Vector2(Mathf.Min(520, safe.rect.width - 32), 52);
-                t.rt.anchoredPosition = pos;
-                float fade = Mathf.Clamp01((t.life - t.age) / .35f);
-                var group = t.rt.GetComponent<CanvasGroup>();
-                if (group != null && t.rt.GetComponent<PopIn>() == null) group.alpha = fade;
+                Rect bounds = OverlayLayout.ToastRect(safe.rect, app.Screen, i, ToastAtBottom);
+                t.Rect.sizeDelta = bounds.size;
+                t.Rect.anchoredPosition = new Vector2(bounds.center.x - safe.rect.center.x, bounds.center.y - safe.rect.yMax);
+                float fade = Mathf.Clamp01((t.Life - t.Age) / .35f);
+                var group = t.Rect.GetComponent<CanvasGroup>();
+                if (group != null && t.Rect.GetComponent<PopIn>() == null) group.alpha = fade;
             }
             for (int i = popups.Count - 1; i >= 0; i--)
             {
@@ -341,10 +359,13 @@ namespace MalatangStory.Game
                 popups[i] = p;
             }
             overlayObstacles.Clear();
+            AddObstacle(announcement);
+            AddObstacle(current?.Root?.Find("Dialog") as RectTransform);
+            AddObstacle(current?.Root?.Find("Register Card") as RectTransform);
             AddObstacle(current?.Root?.Find("Tutorial") as RectTransform);
             AddObstacle(current?.Root?.Find("Missions") as RectTransform);
             AddObstacle(current?.Root?.Find("Next Action") as RectTransform);
-            foreach (var t in toasts) AddObstacle(t.rt);
+            foreach (var t in toasts) AddObstacle(t.Rect);
             for (int i = speeches.Count - 1; i >= 0; i--)
             {
                 var b = speeches[i];

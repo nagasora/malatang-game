@@ -3,6 +3,7 @@
 set -eu
 ROOT="${0:A:h:h}"
 MODE=${1:-EditMode}
+FILTER=${2:-}
 [[ "$MODE" == EditMode || "$MODE" == PlayMode ]] || { echo 'Use EditMode or PlayMode' >&2; exit 2; }
 LOWER=${MODE:l}
 UNITY=/Applications/Unity/Hub/Editor/6000.3.24f1/Unity.app/Contents/MacOS/Unity
@@ -10,6 +11,7 @@ mkdir -p "$ROOT/TestResults"
 RESULT="$ROOT/TestResults/$LOWER-$(date +%Y%m%d-%H%M%S)-$$.xml"
 EXTRA=()
 [[ $MODE == EditMode ]] && EXTRA=(-nographics)
+[[ -n "$FILTER" ]] && EXTRA+=(-testFilter "$FILTER")
 status_code=0
 $UNITY -batchmode $EXTRA -projectPath "$ROOT" -runTests -testPlatform "$MODE" -testResults "$RESULT" -logFile /tmp/malatang-$LOWER.log || status_code=$?
 echo "EXIT=$status_code"
@@ -29,4 +31,4 @@ for tc in r.iter('test-case'):
 if int(sys.argv[2]) or r.get('result') != 'Passed' or int(r.get('passed', '0')) == 0:
     sys.exit(1)
 P
-cp "$RESULT" "$ROOT/TestResults/$LOWER.xml"
+[[ -n "$FILTER" ]] || cp "$RESULT" "$ROOT/TestResults/$LOWER.xml"

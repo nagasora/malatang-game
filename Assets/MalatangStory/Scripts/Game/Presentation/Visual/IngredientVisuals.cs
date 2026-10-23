@@ -1283,6 +1283,15 @@ namespace MalatangStory.Game
         private RendererState[] states = Array.Empty<RendererState>();
         private float doneness;
         private float appliedShrink = 1;
+        private bool hasSoup;
+        private float soupLevel;
+        private Color soupTint;
+        public void SetSoupLevel(float height, Color tint)
+        {
+            if (!float.IsFinite(height)) return;
+            if (hasSoup && Mathf.Abs(soupLevel - height) < .003f && soupTint == tint) return;
+            hasSoup = true; soupLevel = height; soupTint = tint; ApplyState();
+        }
         private float wetness;
         private bool initialized;
 
@@ -1370,6 +1379,15 @@ namespace MalatangStory.Game
             {
                 if (state.Renderer == null) continue;
                 Color color = Color.Lerp(Color.Lerp(state.Raw, state.Cooked, cookedAmount), state.Overcooked, overAmount);
+                if (hasSoup)
+                {
+                    Bounds bounds = state.Renderer.bounds;
+                    float immersed = Mathf.Clamp01((soupLevel - bounds.min.y) / Mathf.Max(.001f, bounds.size.y));
+                    float alpha = color.a;
+                    color = Color.Lerp(color, soupTint, immersed * wetness * .18f);
+                    color *= 1 - .08f * immersed * (1 - immersed) * 4;
+                    color.a = alpha;
+                }
                 float dry = Mathf.Lerp(Mathf.Lerp(state.DrySmoothness, state.CookedSmoothness, cookedAmount),
                     state.OvercookedSmoothness, overAmount);
                 float smoothness = Mathf.Lerp(dry, .92f, wetness);

@@ -6,6 +6,17 @@ namespace MalatangStory.Game
     /// <summary>通知と会話をセーフエリア内に収め、既存パネルとの重なりを避ける。</summary>
     public static class OverlayLayout
     {
+        public static Rect ToastRect(Rect area, GameScreen screen, int index, bool modal)
+        {
+            bool cooking = screen == GameScreen.Cooking, register = screen == GameScreen.Register;
+            float sidebar = cooking ? 500 : register ? 584 : 0;
+            sidebar = Mathf.Min(sidebar, area.width * .6f);
+            float width = Mathf.Clamp(area.width - sidebar - 32, 80, 520);
+            float x = area.center.x - sidebar * .5f;
+            float bottom = modal ? 28 : register ? 365 + index * 58 : cooking ? 160 + index * 58 : Mathf.Max(166, Mathf.Min(236, area.height - 450)) + index * 58;
+            return new Rect(x - width * .5f, area.yMin + bottom - 26, width, 52);
+        }
+
         public static Vector2 Clamp(Rect area, Vector2 size, Vector2 pivot, Vector2 position)
         {
             return new Vector2(Mathf.Clamp(position.x, area.xMin + size.x * pivot.x + 8, area.xMax - size.x * (1 - pivot.x) - 8),

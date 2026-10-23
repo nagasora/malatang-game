@@ -186,7 +186,7 @@ namespace MalatangStory.Game
                 || s.furniture.Select(f => f.uid).Distinct().Count() != s.furniture.Count)
                 throw new InvalidOperationException("保存データの内装が不正です。");
             if (s.staff.Any(m => m == null || !Enum.IsDefined(typeof(StaffRole), m.role) || m.trainingLevel < 1 || m.trainingLevel > 3)
-                || s.staff.Select(m => m.role).Distinct().Count() != s.staff.Count
+                || s.staff.Select(m => m.id).Distinct().Count() != s.staff.Count
                 || s.equipment.Any(e => e == null || Content.Equipment.All(d => d.Id != e.id) || e.level < 0 || e.level > Content.EquipmentById(e.id).MaxLevel)
                 || s.regulars.Any(r => r == null || string.IsNullOrEmpty(r.id) || r.favorites == null
                     || SaveMigration.HasUnknownCondiments(r.likedCondiments) || SaveMigration.HasUnknownCondiments(r.dislikedCondiments))
@@ -231,6 +231,7 @@ namespace MalatangStory.Game
             }
             if (s.saveVersion <= 9)
             {
+                if (s.staff != null) foreach (var member in s.staff.Where(x => x != null)) member.motivation = 70;
                 s.reducedMotion = false; s.snapCamera = false; s.leftHanded = false; s.gaugeMode = 0;
                 s.interactKey = "E"; s.buildRotateKey = "T";
                 if (s.orders != null) foreach (var order in s.orders)

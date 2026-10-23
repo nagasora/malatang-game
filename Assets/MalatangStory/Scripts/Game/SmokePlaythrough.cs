@@ -212,7 +212,13 @@ namespace MalatangStory.Game
                         if (fp) App.World.SetFirstPerson(true);
                         sim.State.highQuality = true; App.ApplySettings();
                         App.Paused = false; App.DevelopmentSpeed = 2;
-                        if (day == 2) yield return MeasurePerformance(sim);
+                        if (day == 2)
+                        {
+                            yield return MeasurePerformance(sim);
+                            sim.State.highQuality = false; App.ApplySettings();
+                            yield return MeasurePerformance(sim);
+                            sim.State.highQuality = true; App.ApplySettings();
+                        }
                         float until = Time.realtimeSinceStartup + (day == 2 ? 12 : 22);
                         while (Time.realtimeSinceStartup < until && sim.State.phase != DayPhase.Report)
                         {
@@ -281,9 +287,49 @@ namespace MalatangStory.Game
             App.Save();
             var saved = App.Saves.Load();
             if (saved == null || saved.day != 5) throw new Exception("Smoke: save failed.");
+            yield return CaptureNewFeatures(sim);
             File.WriteAllText(Path.Combine(Output, "smoke-result.json"), "{\"result\":\"passed\",\"reachedDay\":5,\"shopLevel\":" + sim.State.shopLevel + ",\"served\":" + sim.State.stats.served + ",\"unlockedIngredients\":" + sim.Unlocks.Available.Count() + "}");
             Debug.Log("MALATANG_PLAYER_SMOKE_SUCCESS");
             Application.Quit(0);
+        }
+
+        private IEnumerator CaptureNewFeatures(RestaurantSimulation campaign)
+        {
+            campaign.State.shopLevel = Math.Max(8, campaign.State.shopLevel); campaign.State.moneyFen += 2000000;
+            if (!campaign.BeginPreparation("mala", 3, 2, 1)) throw new Exception("Smoke: preparation start failed");
+            campaign.TickPreparation(.5f); campaign.ChopPreparation();
+            for (int i = 0; i < 8; i++) { campaign.TickPreparation(1); campaign.ChopPreparation(); }
+            App.Open(GameScreen.Preparation); yield return Capture("30-preparation");
+            if (!campaign.FinishPreparation() || !campaign.RecordHouseSoup("朝の香りスープ")) throw new Exception("Smoke: house soup failed");
+            App.Open(GameScreen.Preparation); yield return Capture("30b-house-soup"); yield return CaptureLayouts("30b-house-soup");
+            if (!campaign.HireStaff(StaffRole.Server) || !campaign.HireStaff(StaffRole.Server)) throw new Exception("Smoke: multiple staff failed");
+            var first = campaign.State.staff.First(x => x.role == StaffRole.Server);
+            var second = campaign.State.staff.Last(x => x.role == StaffRole.Server);
+            campaign.TrainStaff(first.id); campaign.PraiseStaff(first.id); campaign.RestStaff(second.id, true);
+            ManagementScreen.tab = 3; App.Open(GameScreen.Management);
+            yield return Capture("31-staff"); yield return CaptureLayouts("31-staff"); ManagementScreen.tab = 0;
+            App.Save();
+            var before = App.Saves.Load();
+            App.Open(GameScreen.Challenges); yield return Capture("32-challenges"); yield return CaptureLayouts("32-challenges");
+            App.StartChallenge(ChallengeRules.Rush, new DateTime(2026, 10, 23, 0, 0, 0, DateTimeKind.Utc));
+            if (!App.InChallenge || !App.Simulation.BeginDay()) throw new Exception("Smoke: challenge start failed");
+            App.Open(GameScreen.Store); yield return Capture("32b-rush");
+            var challenge = App.Simulation;
+            int guard = 0;
+            while (challenge.State.phase != DayPhase.Report && guard++ < 2000)
+            {
+                challenge.Tick(1);
+                foreach (int table in challenge.State.dirtyTables.ToArray()) challenge.ClearTable(table);
+                foreach (var order in challenge.Active.ToArray()) AutoCook(challenge, order);
+                if (guard % 30 == 0) yield return null;
+            }
+            if (challenge.State.phase != DayPhase.Report) throw new Exception("Smoke: challenge did not finish");
+            App.Open(GameScreen.Report); yield return new WaitForSeconds(1.5f); yield return Capture("32c-rush-result");
+            App.LeaveChallenge();
+            var after = App.Saves.Load();
+            if (after == null || after.day != before.day || after.moneyFen != before.moneyFen || after.stats.served != before.stats.served || after.challengeRecords.Count != before.challengeRecords.Count + 1)
+                throw new Exception("Smoke: challenge changed campaign progress or failed to record");
+            App.Open(GameScreen.Challenges); yield return Capture("32d-personal-best");
         }
 
         /// <summary>実際の客席に専用カメラを向け、食事中または片付け前の器を撮影します。</summary>
@@ -479,7 +525,16 @@ namespace MalatangStory.Game
             yield return null;
             double start = Time.realtimeSinceStartupAsDouble, previous = start, nextCook = start;
             double sum = 0, maximum = 0;
-            int frames = 0;
+            int frames = 0, timingSamples = 0;
+            double cpuFrame = 0, gpuFrame = 0;
+            var timing = new FrameTiming[1];
+            var process = System.Diagnostics.Process.GetCurrentProcess();
+            double cpuStart = process.TotalProcessorTime.TotalMilliseconds;
+            long probeBefore = GC.GetAllocatedBytesForCurrentThread();
+            var allocationProbe = new byte[128]; GC.KeepAlive(allocationProbe);
+            bool allocationCounterSupported = GC.GetAllocatedBytesForCurrentThread() > probeBefore;
+            long allocatedStart = GC.GetAllocatedBytesForCurrentThread();
+            var intervals = new double[10000]; int intervalCount = 0, hitches = 0;
             while (previous - start < 10)
             {
                 if (previous >= nextCook)
@@ -488,10 +543,17 @@ namespace MalatangStory.Game
                     foreach (CustomerOrder order in sim.Active.ToArray()) AutoCook(sim, order);
                     nextCook = previous + .4;
                 }
+                FrameTimingManager.CaptureFrameTimings();
                 yield return null;
+                if (FrameTimingManager.GetLatestTimings(1, timing) > 0)
+                {
+                    cpuFrame += timing[0].cpuFrameTime; gpuFrame += timing[0].gpuFrameTime; timingSamples++;
+                }
                 double now = Time.realtimeSinceStartupAsDouble;
                 double elapsed = (now - previous) * 1000;
                 sum += elapsed; maximum = Math.Max(maximum, elapsed); frames++;
+                if (intervalCount < intervals.Length) intervals[intervalCount++] = elapsed;
+                if (elapsed > 50) hitches++;
                 previous = now;
             }
             int renderers = 0;
@@ -505,13 +567,21 @@ namespace MalatangStory.Game
                 for (int submesh = 0; submesh < mesh.subMeshCount; submesh++)
                     if (mesh.GetTopology(submesh) == MeshTopology.Triangles) triangles += mesh.GetIndexCount(submesh) / 3;
             }
+            Array.Sort(intervals, 0, intervalCount);
             var result = new PerformanceResult
             {
                 highQuality = sim.State.highQuality, durationSeconds = previous - start, frames = frames,
                 averageFrameMs = frames > 0 ? sum / frames : 0, maximumFrameMs = maximum,
                 meshRenderers = renderers, totalTriangles = triangles,
+                timingSamples = timingSamples, cpuFrameMs = timingSamples > 0 ? cpuFrame / timingSamples : 0,
+                gpuFrameMs = timingSamples > 0 ? gpuFrame / timingSamples : 0,
+                processCpuMsPerFrame = frames > 0 ? (process.TotalProcessorTime.TotalMilliseconds - cpuStart) / frames : 0,
+                allocationCounterSupported = allocationCounterSupported,
+                percentile95Ms = intervalCount > 0 ? intervals[(int)((intervalCount - 1) * .95)] : 0,
+                percentile99Ms = intervalCount > 0 ? intervals[(int)((intervalCount - 1) * .99)] : 0, hitchesOver50Ms = hitches,
+                mainThreadBytesPerFrame = allocationCounterSupported && frames > 0 ? (GC.GetAllocatedBytesForCurrentThread() - allocatedStart) / frames : -1,
             };
-            File.WriteAllText(Path.Combine(Output, "perf.json"), JsonUtility.ToJson(result, true));
+            File.WriteAllText(Path.Combine(Output, sim.State.highQuality ? "perf.json" : "perf-low.json"), JsonUtility.ToJson(result, true));
             Debug.Log("MALATANG_PERF " + JsonUtility.ToJson(result));
         }
 
@@ -523,6 +593,10 @@ namespace MalatangStory.Game
             public double durationSeconds, averageFrameMs, maximumFrameMs;
             public int frames, meshRenderers;
             public long totalTriangles;
+            public int timingSamples, hitchesOver50Ms;
+            public bool allocationCounterSupported;
+            public double percentile95Ms, percentile99Ms;
+            public double cpuFrameMs, gpuFrameMs, processCpuMsPerFrame, mainThreadBytesPerFrame;
         }
 
         /// <summary>注文の具材（おまかせはスタッフと同じ自動選択）。</summary>

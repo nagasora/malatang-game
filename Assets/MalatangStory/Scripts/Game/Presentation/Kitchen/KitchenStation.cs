@@ -360,7 +360,7 @@ namespace MalatangStory.Game
                 if (collider != null)
                 {
                     float span = Mathf.Max(collider.size.x, collider.size.z);
-                    float fit = Mathf.Min(PieceScale, .13f / Mathf.Max(.001f, span));
+                    float fit = Mathf.Min(PieceScale, .16f / Mathf.Max(.001f, span));
                     piece.transform.localScale = Vector3.one * fit;
                     // 網の中身は視覚専用であり、独立した操作コライダーを残すと鍋へのタップを遮る。
                     collider.enabled = false;
@@ -470,7 +470,8 @@ namespace MalatangStory.Game
         {
             if (bowl == null) return;
             var item = catalog.Get(ingredientId);
-            var piece = IngredientVisuals.Build(item, root, PieceScale, true);
+            float volume = Mathf.Clamp(Mathf.Pow(item.portionGrams / 35f, 1f / 3f) * 1.25f, 1, 1.5f);
+            var piece = IngredientVisuals.Build(item, root, PieceScale * volume * Random.Range(.95f, 1.05f), true);
             float angle = index * 2.39f + Random.Range(-.3f, .3f), radius = Random.Range(.01f, .05f);
             // 先に入った具材と重なった位置に出すと、物理演算の押し戻しで器の外へ弾き飛ばされるため、縁より上から順に落とす。
             Vector3 spawn = bowl.position + new Vector3(Mathf.Cos(angle) * radius, .32f + order * .09f, Mathf.Sin(angle) * radius);
@@ -563,6 +564,8 @@ namespace MalatangStory.Game
                 start.piece.SetPositionAndRotation(Vector3.Lerp(start.position, position, platingBlend),
                     Quaternion.Slerp(start.rotation, bowlRotation * placement.Rotation, platingBlend));
                 start.piece.localScale = start.scale * Mathf.Lerp(1f, placement.Scale, platingBlend);
+                var soup = Content.Soup(string.IsNullOrEmpty(order.chosenSoup) ? order.soup : order.chosenSoup);
+                start.piece.GetComponent<IngredientView>()?.SetSoupLevel(bowl.TransformPoint(Vector3.up * SoupHeight(VisualSoupMl)).y, new Color(soup.R, soup.G, soup.B));
             }
         }
 
@@ -593,7 +596,7 @@ namespace MalatangStory.Game
                 }
                 int index = piece.TryGetComponent(out KitchenTarget mark) ? mark.Index : -1;
                 string category = index >= 0 && index < order.selected.Count ? catalog.Get(order.selected[index]).category : "";
-                platingInputs.Add(new PlatingInput { Category = category, LocalBounds = LocalBounds(piece), RelativeScale = piece.transform.lossyScale.x / bowlScale });
+                platingInputs.Add(new PlatingInput { Category = category, LocalBounds = LocalBounds(piece), RelativeScale = piece.transform.lossyScale.x / bowlScale, WeightGrams = index >= 0 && index < order.selected.Count ? catalog.Get(order.selected[index]).portionGrams : 0 });
                 platingStarts.Add((piece.transform, piece.transform.position, piece.transform.rotation, piece.transform.localScale));
             }
             BowlPlating.Arrange(platingInputs, SoupHeight(PlatingReferenceMl), CustomerDirector.StableHash(order.id), platingTargets);
@@ -763,7 +766,8 @@ namespace MalatangStory.Game
             garnishes.localPosition = Vector3.up * (h * .72f + .006f);
             PlateServedPieces(o, go.transform, h * .72f, surface.transform, garnishes);
             var steamFx = EffectsFactory.Steam(go.transform, o.mealFinished ? 0f : SoupAppearance.ForSoup(soup.Id, o.chosenSpice).SteamIntensity);
-            steamFx.transform.localPosition = new Vector3(0, h, 0);
+            steamFx.transform.localPosition = new Vector3(0, h * .74f, 0);
+            steamFx.gameObject.AddComponent<BowlSteam>().Initialize(steamFx, o, Sim.State);
             return go;
         }
 
@@ -780,7 +784,7 @@ namespace MalatangStory.Game
                 // 器の具材は見た目専用で、席や提供台へのタップを遮らないようコライダーは止める。
                 if (piece.TryGetComponent(out BoxCollider box)) box.enabled = false;
                 piece.GetComponent<IngredientView>()?.SetDoneness(1);
-                servedInputs.Add(new PlatingInput { Category = item.category, LocalBounds = LocalBounds(piece), RelativeScale = localScale });
+                servedInputs.Add(new PlatingInput { Category = item.category, LocalBounds = LocalBounds(piece), RelativeScale = localScale, WeightGrams = item.portionGrams });
                 servedPieces.Add(piece.transform);
             }
             BowlPlating.Arrange(servedInputs, soupHeight, CustomerDirector.StableHash(o.id), servedPlacements);
@@ -789,6 +793,9 @@ namespace MalatangStory.Game
                 PlatingPlacement placement = servedPlacements[i];
                 servedPieces[i].SetLocalPositionAndRotation(placement.Position, placement.Rotation);
                 servedPieces[i].localScale = Vector3.one * (localScale * placement.Scale);
+                var view = servedPieces[i].GetComponent<IngredientView>();
+                var soup = Content.Soup(string.IsNullOrEmpty(o.chosenSoup) ? o.soup : o.chosenSoup);
+                view.SetWet(1); view.SetSoupLevel(surface.position.y, new Color(soup.R, soup.G, soup.B));
             }
             MealBowlView meal = servedBowl.gameObject.AddComponent<MealBowlView>();
             meal.Initialize(servedPieces, o.mealFinished ? o.leftovers : MealLeftovers.Evaluate(o, catalog), surface, garnishes, soupHeight / .72f);
@@ -936,6 +943,7 @@ namespace MalatangStory.Game
         public Bounds LocalBounds;
         /// <summary>具材の倍率を器メッシュのローカル単位で表した値。</summary>
         public float RelativeScale;
+        public float WeightGrams;
     }
 
     /// <summary>器メッシュのローカル座標での 1 具材の盛り付け姿勢。</summary>
@@ -991,8 +999,9 @@ namespace MalatangStory.Game
                 float spread = count <= 1 ? 0f : Mathf.Sqrt((slot + .35f) / count);
                 float angle = slot * GoldenAngle + seed * .61f;
                 Vector3 radial = new Vector3(Mathf.Cos(angle), 0f, Mathf.Sin(angle));
-                Vector3 size = input.LocalBounds.size * input.RelativeScale;
-                bool upright = size.y > 1.25f * Mathf.Max(size.x, size.z);
+                float fullness = input.WeightGrams > 0 ? Mathf.Clamp(Mathf.Pow(input.WeightGrams / 35f, 1f / 3f) * 1.35f, 1, 1.6f) : 1;
+                Vector3 size = input.LocalBounds.size * input.RelativeScale * fullness;
+                bool upright = size.y > 1.25f * Mathf.Max(size.x, size.z) || (input.WeightGrams > 0 && input.Category == "mushroom" && size.y > .9f * Mathf.Max(size.x, size.z));
                 bool noodle = input.Category == "noodle";
                 float tilt = upright ? 66f : 8f + 16f * spread;
                 Quaternion rotation = Quaternion.LookRotation(radial, Vector3.up) * Quaternion.Euler(tilt, 0f, 0f)
@@ -1005,6 +1014,7 @@ namespace MalatangStory.Game
                 float mound = (1f - spread) * surfaceRadius * .32f + slot * .004f;
                 float centerY = soupHeight + (noodle ? -extents.y * .1f : extents.y * .35f) + mound;
                 Vector3 center = radial * radius + new Vector3(0f, centerY, 0f);
+                shrink *= fullness;
                 Vector3 pivotOffset = rotation * (input.LocalBounds.center * input.RelativeScale * shrink);
                 output[index] = new PlatingPlacement { Position = center - pivotOffset, Rotation = rotation, Scale = shrink };
             }

@@ -11,6 +11,8 @@ namespace MalatangStory.Game
     /// </summary>
     public static class CustomerVoice
     {
+        public static float VoicePitch(CustomerOrder order) => .9f + (Math.Abs((long)order.appearanceSeed) % 9) * .035f;
+
         private static Random For(CustomerOrder o, int salt) => new Random(unchecked(CustomerDirector.StableHash(o.id) * 31 + salt));
 
         private static string Pick(Random random, params string[] lines) => lines[random.Next(lines.Length)];
@@ -18,6 +20,7 @@ namespace MalatangStory.Game
         /// <summary>レジに来た時のあいさつ。</summary>
         public static string Greeting(CustomerOrder o)
         {
+            if (!string.IsNullOrEmpty(o.returnNote)) return o.returnNote;
             var r = For(o, 1);
             if (o.usual) return Pick(r, "やあ、店長！", "こんにちは、また来ちゃいました。", "どうも、今日もよろしく！");
             switch (o.archetype)
@@ -63,9 +66,11 @@ namespace MalatangStory.Game
         }
 
         /// <summary>注文のせりふ（吹き出しで順に出す）。</summary>
-        public static List<string> OrderLines(CustomerOrder o, IngredientCatalog catalog)
+        public static List<string> OrderLines(CustomerOrder o, IngredientCatalog catalog, bool natural = false)
         {
             var lines = new List<string>();
+            string wish = CustomerWishes.Description(o);
+            if (wish.Length > 0) lines.Add(wish);
             bool english = o.archetype == "foreigner";
             if (o.usual)
             {
@@ -93,8 +98,10 @@ namespace MalatangStory.Game
                 var names = o.requested.Select(id => catalog.Get(id).displayName).ToList();
                 lines.Add("具材は" + string.Join("、", names) + "で。");
             }
-            string soup = english ? SoupPhrase(o.soup) + " please! (" + SoupPhrase(o.soup) + "で)" : SoupPhrase(o.soup) + "、" + SpicePhrase(o.spice) + "。";
-            if (english) { lines.Add(soup); lines.Add("Spicy level " + o.spice + ". (" + SpicePhrase(o.spice) + ")"); }
+            string spicePhrase = natural ? OrderLanguage.SpicePhrase(o.spice, o.appearanceSeed) : SpicePhrase(o.spice);
+            string soup = english ? SoupPhrase(o.soup) + " please! (" + SoupPhrase(o.soup) + "で)" : SoupPhrase(o.soup) + "、" + spicePhrase + "。";
+            if (english && natural) lines.Add(spicePhrase + " please.");
+            if (english && !natural) { lines.Add(soup); lines.Add("Spicy level " + o.spice + ". (" + SpicePhrase(o.spice) + ")"); }
             else lines.Add(soup);
             var extras = new List<string>();
             extras.AddRange(o.requestedCondiments.Distinct().Select(id => Content.Condiment(id).Name + "多め"));

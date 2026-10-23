@@ -72,10 +72,10 @@ namespace MalatangStory.Game
             var o = O;
             if (o == null) { step = Step.Done; BuildDone(); return; }
             lines.Add(CustomerVoice.Greeting(o));
-            lines.AddRange(CustomerVoice.OrderLines(o, Sim.Catalog));
+            lines.AddRange(CustomerVoice.OrderLines(o, Sim.Catalog, S.tutorialComplete && S.shopLevel >= 3));
             if (o.ticketConfirmed) { lines.Add(CustomerVoice.PaymentLine(o)); shownLines = lines.Count; }
             else shownLines = 1;
-            App.Audio.Play(Sfx.Voice, .7f);
+            PlayVoice();
             App.World.Speak(o.id, lines[0]);
             step = !o.ticketConfirmed ? Step.Listen : o.style == OrderStyle.SelfServe && o.weighedGrams <= 0 ? Step.Weigh : Step.Pay;
             BuildStep();
@@ -88,6 +88,13 @@ namespace MalatangStory.Game
             lines.Add(text);
             shownLines = lines.Count;
             RenderDialog();
+        }
+
+        private void PlayVoice()
+        {
+            if (O == null) return;
+            App.Audio.PlayPitched(Sfx.Voice, CustomerVoice.VoicePitch(O), .6f);
+            App.World.Talk(O.id, .8f);
         }
 
         private void RenderDialog()
@@ -157,8 +164,21 @@ namespace MalatangStory.Game
             string items = o.style == OrderStyle.SelfServe ? "具材：お客さんが選んだボウル（" + o.selected.Count + "品）"
                 : o.omakase ? "具材：おまかせ（" + string.Join("・", Omakase.Wishes(o)) + "）"
                 : "具材：" + string.Join("・", o.requested.Select(id => Sim.Catalog.Get(id).displayName));
-            var note = UIKit.Label(col, items, 15, UIKit.Ink, TextAnchor.UpperLeft);
-            UIKit.Height(note, 44);
+            if (!S.tutorialComplete)
+            {
+                var note = UIKit.Label(col, items, 15, UIKit.Ink, TextAnchor.UpperLeft, false, "Order Summary");
+                UIKit.Height(note, 44);
+            }
+            else
+            {
+                var repeat = UIKit.Button(col, "もう一度聞く", () =>
+                {
+                    if (!Sim.AskOrderAgain(o.id)) return;
+                    lines.AddRange(CustomerVoice.OrderLines(o, Sim.Catalog, S.shopLevel >= 3));
+                    shownLines = lines.Count; RenderDialog(); PlayVoice();
+                }, ButtonStyle.Secondary, 16, IconKind.Bell);
+                UIKit.Height(repeat, 42);
+            }
             if (o.usual)
             {
                 var memo = UIKit.Button(col, "常連ノートを見る（ボーナスなし）", () =>
@@ -353,7 +373,7 @@ namespace MalatangStory.Game
                 {
                     lineTimer = 0;
                     shownLines++;
-                    App.Audio.Play(Sfx.Voice, .55f);
+                    PlayVoice();
                     if (o != null) App.World.Speak(o.id, lines[shownLines - 1], false, 2.6f);
                     RenderDialog();
                 }

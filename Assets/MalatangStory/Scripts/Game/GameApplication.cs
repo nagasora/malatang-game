@@ -11,7 +11,7 @@ namespace MalatangStory.Game
     /// ゲーム全体の起点。シミュレーション・ワールド・UI・オーディオ・保存を結び付け、
     /// シミュレーションの出来事を効果音・演出・通知に振り分ける。
     /// </summary>
-    public sealed class GameApplication : MonoBehaviour
+    public sealed partial class GameApplication : MonoBehaviour
     {
         public static string SavePathOverride;
         public RestaurantSimulation Simulation { get; private set; }
@@ -56,8 +56,10 @@ namespace MalatangStory.Game
             if (!string.IsNullOrEmpty(smokeOutput)) { SavePathOverride = Path.Combine(smokeOutput, "smoke-save.json"); Application.runInBackground = true; }
 #endif
             font = Resources.Load<Font>("Fonts/NotoSansJP") ?? Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
+            UIKit.HeadingFont = Resources.Load<Font>("Fonts/ZenMaruGothic-Regular") ?? font;
             Catalog = IngredientCatalog.Load();
-            Saves = new SaveRepository(SavePathOverride ?? Path.Combine(Application.persistentDataPath, "malatang-save.json"));
+            campaignPath = SavePathOverride ?? Path.Combine(Application.persistentDataPath, "malatang-save.json");
+            Saves = campaignSaves = new SaveRepository(campaignPath);
             CharacterFactory.MaterialProvider = (color, smoothness) => MaterialLibrary.Lit(color, smoothness);
             Audio = gameObject.AddComponent<AudioDirector>();
             Audio.Initialize();
@@ -244,13 +246,14 @@ namespace MalatangStory.Game
             catch (Exception e) { SaveMessage = "保存できませんでした：" + e.Message; Debug.LogWarning(SaveMessage); }
         }
 
-        public void SuspendToTitle() { Save(); Started = false; Paused = false; Open(GameScreen.Title); }
+        public void SuspendToTitle() { if (InChallenge) { LeaveChallenge(); return; } Save(); Started = false; Paused = false; Open(GameScreen.Title); }
 
         public void ApplySettings()
         {
             var s = Simulation.State;
             UIKit.TextScale = s.textSize / 20f; UIKit.ReduceMotion = s.reducedMotion;
             QualitySettings.shadows = s.highQuality ? ShadowQuality.All : ShadowQuality.Disable;
+            Resources.Load<UnityEngine.Rendering.Universal.ScriptableRendererFeature>("RestaurantSSAO")?.SetActive(s.highQuality);
             Application.targetFrameRate = Application.isMobilePlatform ? (s.highQuality ? 60 : 30) : 60;
             Audio.EffectsVolume = s.effectsVolume;
             Audio.MusicVolume = s.musicVolume;

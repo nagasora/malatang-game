@@ -42,6 +42,7 @@ namespace MalatangStory.Game
         private Camera view;
         private float detailTimer;
         private float streetFront;
+        private float crossingPhase;
         private string fallingSeason;
         private ParticleSystem seasonalParticles;
         private string requestedSeason;
@@ -79,15 +80,15 @@ namespace MalatangStory.Game
                 umbrella.SetActive(false);
                 pedestrians.Add(new Pedestrian { Rig = rig, Root = person, Umbrella = umbrella, Distant = distant, Phase = i * .8f, Speed = speed, LaneZ = lane, Direction = direction });
             }
-            for (int i = 0; i < 3; i++)
+            for (int i = 0; i < 5; i++)
             {
-                int direction = i == 1 ? -1 : 1;
+                int direction = i % 2 == 1 ? -1 : 1;
                 Transform car = new GameObject("City Car " + i).transform;
                 car.SetParent(transform, false);
                 car.localPosition = new Vector3(-35 + i * 27, 0, front - (direction > 0 ? 5.6f : 9.6f));
                 car.localRotation = Quaternion.Euler(0, direction * 90, 0);
                 BuildCar(car, i);
-                vehicles.Add(new Vehicle { Root = car, Speed = 4.3f + i * .8f, Direction = direction, LaneZ = car.localPosition.z });
+                vehicles.Add(new Vehicle { Root = car, Speed = 4.3f + i % 3 * .8f, Direction = direction, LaneZ = car.localPosition.z });
             }
             Transform bicycle = new GameObject("Passing Bicycle").transform;
             bicycle.SetParent(transform, false);
@@ -251,10 +252,23 @@ namespace MalatangStory.Game
                 UpdateDetail();
                 detailTimer = .25f;
             }
-            foreach (Pedestrian person in pedestrians)
+            crossingPhase = Mathf.Repeat(crossingPhase + delta, 36);
+            float crossingZ = streetFront - 2.2f - Mathf.Clamp01((crossingPhase - 10) / 10) * 10.3f;
+            for (int personIndex = 0; personIndex < pedestrians.Count; personIndex++)
             {
+                Pedestrian person = pedestrians[personIndex];
                 if (!person.Root.gameObject.activeSelf) continue;
-                float x = Wrap(person.Root.localPosition.x + person.Direction * person.Speed * delta);
+                if (personIndex == 0 && crossingPhase >= 10 && crossingPhase < 20)
+                {
+                    person.Root.localPosition = new Vector3(StreetVisualRules.CrosswalkX, 0, crossingZ);
+                    person.Root.localRotation = Quaternion.Euler(0, 180, 0); person.Rig.SetMoveSpeed(person.Speed);
+                    continue;
+                }
+                bool pause = StreetVisualRules.PauseToLook(Time.time, personIndex * 3.7f, rainy);
+                person.Rig.SetMoveSpeed(pause ? 0 : person.Speed);
+                person.Rig.SetPose(pause ? CharacterPose.Think : CharacterPose.Walk);
+                person.Root.localRotation = Quaternion.Euler(0, pause ? 0 : person.Direction * 90, 0);
+                float x = Wrap(person.Root.localPosition.x + person.Direction * person.Speed * (pause ? 0 : delta));
                 person.Root.localPosition = new Vector3(x, 0, person.LaneZ);
                 person.Phase += delta * person.Speed * 5f;
                 if (person.Distant.gameObject.activeSelf)
@@ -269,7 +283,8 @@ namespace MalatangStory.Game
                     if (vehicle.Delay == 0) vehicle.Root.gameObject.SetActive(true);
                     continue;
                 }
-                float x = vehicle.Root.localPosition.x + vehicle.Direction * vehicle.Speed * delta;
+                bool yield = crossingPhase >= 10 && crossingPhase < 20 && StreetVisualRules.YieldForCrossing(vehicle.Root.localPosition.x, vehicle.Direction, crossingZ, streetFront);
+                float x = vehicle.Root.localPosition.x + vehicle.Direction * vehicle.Speed * (yield ? 0 : delta);
                 if (vehicle.Bicycle && x > HalfStreet)
                 {
                     vehicle.Root.gameObject.SetActive(false);
@@ -371,14 +386,30 @@ namespace MalatangStory.Game
         private void BuildCar(Transform car, int index)
         {
             Color[] colors = { new Color(.85f, .82f, .72f), new Color(.32f, .43f, .52f), new Color(.63f, .21f, .18f) };
-            Material body = MaterialLibrary.Lit(colors[index], .65f, .15f);
+            Material body = MaterialLibrary.Lit(colors[index % colors.Length], .65f, .15f);
             Material glass = MaterialLibrary.Lit(new Color(.13f, .22f, .28f), .8f, .25f);
             Material rubber = MaterialLibrary.Lit(new Color(.08f, .09f, .1f), .2f);
             Material head = MaterialLibrary.Emissive(new Color(.88f, .88f, .7f), new Color(1, .94f, .75f), 0);
             Material tail = MaterialLibrary.Emissive(new Color(.65f, .05f, .04f), new Color(1, .08f, .04f), 0);
             using (CityGeometry g = new CityGeometry())
             {
+                bool truck = index == 1, bus = index == 4, scooter = index == 3, tricycle = index == 2;
+                if (scooter || tricycle) car.localScale = new Vector3(.55f, .85f, .65f);
+                if (bus) car.localScale = new Vector3(1.25f, 1.5f, 1.7f);
                 g.Box(new Vector3(0, .65f, 0), new Vector3(1.55f, .65f, 3.25f), body);
+                if (truck)
+                {
+                    g.Box(new Vector3(0, 1.1f, -.7f), new Vector3(1.5f, .35f, 1.5f), body);
+                    g.Box(new Vector3(0, 1.2f, -.7f), new Vector3(1.3f, .06f, 1.3f), rubber);
+                }
+                if (bus)
+                    for (int window = -2; window <= 2; window++)
+                        g.Box(new Vector3(0, 1.2f, window * .55f), new Vector3(1.57f, .42f, .36f), glass);
+                if (scooter || tricycle)
+                {
+                    g.Sphere(new Vector3(0, 1.75f, .1f), new Vector3(.42f, .4f, .42f), body);
+                    g.Box(new Vector3(0, 1.33f, .1f), new Vector3(.4f, .55f, .38f), rubber);
+                }
                 g.Box(new Vector3(0, 1.08f, -.15f), new Vector3(1.36f, .67f, 1.8f), glass);
                 g.Box(new Vector3(0, 1.46f, -.15f), new Vector3(1.4f, .11f, 1.85f), body);
                 for (int side = -1; side <= 1; side += 2)

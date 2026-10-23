@@ -14,7 +14,7 @@ namespace MalatangStory.Game
     /// </summary>
     public static class UIKit
     {
-        public static Font Font;
+        public static Font Font, HeadingFont;
         public static float TextScale = 1;
         public static bool ReduceMotion;
         /// <summary>ボタン押下時に鳴らす音（オーディオ側が設定する）。</summary>
@@ -82,7 +82,7 @@ namespace MalatangStory.Game
         {
             var rt = Rect(name, parent);
             var label = rt.gameObject.AddComponent<Text>();
-            label.font = Font; label.text = text; label.fontSize = Mathf.RoundToInt(size * TextScale); label.color = color ?? Ink;
+            label.font = bold && HeadingFont != null ? HeadingFont : Font; label.text = text; label.fontSize = Mathf.RoundToInt(size * TextScale); label.color = color ?? Ink;
             label.alignment = align; label.raycastTarget = false; label.supportRichText = false;
             label.fontStyle = bold ? FontStyle.Bold : FontStyle.Normal;
             label.horizontalOverflow = HorizontalWrapMode.Wrap; label.verticalOverflow = VerticalWrapMode.Truncate;
@@ -245,6 +245,17 @@ namespace MalatangStory.Game
         }
 
         /// <summary>見出しつきの大きなカード（モーダル画面の土台）。</summary>
+        public static InputField NameInput(Transform parent, string value, int maximum = 16)
+        {
+            var bg = Panel(parent, Color.white, 10, false, "Name Input");
+            var field = bg.gameObject.AddComponent<InputField>();
+            var text = Label(bg.transform, "", 19, Ink, TextAnchor.MiddleLeft);
+            Fill(text.rectTransform, 12, 12, 4, 4); text.raycastTarget = false;
+            field.textComponent = text; field.characterLimit = 256; field.text = value;
+            field.onEndEdit.AddListener(v => field.SetTextWithoutNotify(PlayerText.Clean(v, maximum)));
+            return field;
+        }
+
         public static RectTransform Card(Transform parent, string title, Vector2 size, IconKind? icon = null, Action onClose = null)
         {
             var panel = Panel(parent, Paper, 24, true, "Card " + title);
@@ -317,6 +328,9 @@ namespace MalatangStory.Game
         public float Duration = .28f;
         private float time;
         private CanvasGroup group;
+        private RectTransform rect;
+        private Vector2 origin;
+        private bool positioned;
         private void Awake()
         {
             group = (TryGetComponent<CanvasGroup>(out var existingCanvasGroup) ? existingCanvasGroup : gameObject.AddComponent<CanvasGroup>());
@@ -324,11 +338,13 @@ namespace MalatangStory.Game
         }
         private void Update()
         {
+            if (!positioned) { rect = transform as RectTransform; if (rect != null) origin = rect.anchoredPosition; positioned = true; }
             time += Time.unscaledDeltaTime;
             float t = UIKit.ReduceMotion ? 1 : Mathf.Clamp01((time - Delay) / Duration);
             float eased = 1 - Mathf.Pow(1 - t, 3);
             float overshoot = 1 + Mathf.Sin(t * Mathf.PI) * .06f;
             group.alpha = eased;
+            if (rect != null) rect.anchoredPosition = origin + Vector2.down * (1 - eased) * 24;
             transform.localScale = Vector3.one * Mathf.Lerp(.85f, 1f, eased) * overshoot;
             if (t >= 1) { transform.localScale = Vector3.one; group.alpha = 1; Destroy(this); }
         }

@@ -115,6 +115,18 @@ namespace MalatangStory.Game
             new Dictionary<Tuple<string, int, int, int, float, Color, Color>, Sprite>();
 
         /// <summary>指定した二色とシードから、継ぎ目と木目のある板材を生成する。</summary>
+        public static Texture2D SteamNoise(int size)
+        {
+            ValidateSize(size);
+            return Texture(Key(nameof(SteamNoise), size), size, size, false, (x, y) =>
+            {
+                float u = (x + .5f) / size * 2 - 1, v = (y + .5f) / size * 2 - 1;
+                float noise = ValueNoise(x * .17f, y * .11f, 711);
+                float alpha = Mathf.Exp(-(u * u * 1.4f + v * v * .7f) * 4) * (.3f + noise * .7f);
+                return new Color(1, 1, 1, Mathf.Clamp01(alpha));
+            });
+        }
+
         public static Texture2D WoodPlanks(int size, Color light, Color dark, int seed)
         {
             ValidateSize(size);
@@ -128,8 +140,8 @@ namespace MalatangStory.Game
                     int plank = Mathf.FloorToInt(v * 6f);
                     float seam = Mathf.Min(Fraction(v * 6f), 1f - Fraction(v * 6f));
                     float phase = Hash(plank, 0, seed) * Mathf.PI * 2f;
-                    float grain = Mathf.Sin(u * Mathf.PI * 64f + Mathf.Sin(v * Mathf.PI * 12f) * 3f + phase);
-                    float shade = 0.5f + grain * 0.16f + (Hash(x, y, seed) - 0.5f) * 0.1f;
+                    float grain = Mathf.Sin(u * Mathf.PI * 64f + Mathf.Sin(v * Mathf.PI * 4f + phase) * .35f + phase);
+                    float shade = 0.5f + grain * .035f + (Hash(x, y, seed) - 0.5f) * .025f;
                     float joint = Fraction(u * 3f + (plank % 2) * 0.5f);
                     if (seam < 0.025f || joint < 0.009f) shade = 0.05f;
                     return Color.Lerp(dark, light, Mathf.Clamp01(shade));

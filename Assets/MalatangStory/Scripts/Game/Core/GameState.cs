@@ -46,6 +46,7 @@ namespace MalatangStory.Game
         public string type;
         public string archetype = "office";
         public string regularId = "";
+        public string wish = "", returnNote = "";
         public string signatureId = "";
         public OrderStyle style;
         public bool takeout;
@@ -150,6 +151,7 @@ namespace MalatangStory.Game
         /// <summary>本日提供した客タイプ（重複あり）。</summary>
         public List<string> servedArchetypes = new List<string>();
         public float qualitySum;
+        public AlbumEntry bestBowl;
         public List<string> reviews = new List<string>();
         public List<string> highlights = new List<string>();
         /// <summary>閉店時に人気へ加える増減（配信者など）。途中保存でも失われないよう日報に持つ。</summary>
@@ -172,6 +174,11 @@ namespace MalatangStory.Game
     /// <summary>雇っているスタッフ。</summary>
     [Serializable] public sealed class HiredStaff
     {
+        public string id = "";
+        public int personality = 2;
+        public int praisedDay, mealDay;
+        public float fatigue, motivation = 70;
+        public bool resting;
         public StaffRole role;
         public string name;
         public int appearanceSeed;
@@ -194,6 +201,8 @@ namespace MalatangStory.Game
         public List<string> likedCondiments = new List<string>();
         public List<string> dislikedCondiments = new List<string>();
         public int storyIndex;
+        public int answeredStory, lastVisitDay;
+        public bool concerned, introducedFriend;
     }
 
     /// <summary>名物メニュー。</summary>
@@ -208,6 +217,7 @@ namespace MalatangStory.Game
         public List<string> condiments = new List<string>();
         public int timesSold;
         public float qualitySum;
+        public AlbumEntry bestBowl;
     }
 
     /// <summary>設備のレベル。</summary>
@@ -384,6 +394,16 @@ namespace MalatangStory.Game
         public bool reducedMotion, snapCamera, leftHanded;
         public int gaugeMode;
         public string interactKey = "E", buildRotateKey = "T";
+        public PreparationState preparation = new PreparationState();
+        public List<HouseSoup> houseSoups = new List<HouseSoup>();
+        public string activeHouseSoup = "";
+        public int nextHouseSoup = 1;
+        public int nextStaffId = 1;
+        public int rushWarnings;
+        public string challengeMode = "", challengeRule = "";
+        public int challengeSeed;
+        public List<ChallengeRecord> challengeRecords = new List<ChallengeRecord>();
+        public List<string> introducedArchetypes = new List<string>();
 
         /// <summary>設備レベルを返す（未購入は鍋・保管棚が1、その他は0）。</summary>
         public int EquipmentLevel(string id)

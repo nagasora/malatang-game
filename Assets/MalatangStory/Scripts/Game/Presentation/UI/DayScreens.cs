@@ -58,6 +58,7 @@ namespace MalatangStory.Game
             layout.spacing = 8; layout.childControlWidth = true; layout.childControlHeight = true; layout.childForceExpandWidth = true;
             UIKit.Button(row, "朝市", () => { ShopScreen.StartAtMarket = true; App.Open(GameScreen.Shop); }, ButtonStyle.Gold, 18, IconKind.Cart, market != null);
             UIKit.Button(row, "仕入れ", () => App.Open(GameScreen.Shop), ButtonStyle.Secondary, 18, IconKind.Cart);
+            UIKit.Button(row, "仕込み", () => App.Open(GameScreen.Preparation), ButtonStyle.Gold, 18, IconKind.Pot, !tutorial);
             UIKit.Button(row, "経営", () => App.Open(GameScreen.Management), ButtonStyle.Secondary, 18, IconKind.Chart, !tutorial);
             UIKit.Button(row, "内装", () => App.Open(GameScreen.Build), ButtonStyle.Secondary, 18, IconKind.Hammer, !tutorial);
             UIKit.Button(row, "着せ替え", () => App.Open(GameScreen.Wardrobe), ButtonStyle.Secondary, 18, IconKind.Person);
@@ -99,6 +100,9 @@ namespace MalatangStory.Game
         private Text numbers;
         private float reveal;
         private string[] lines;
+        private int shownLineCount = -1;
+        private long shownRevenue = long.MinValue, shownProfit = long.MinValue;
+        private string revenueSuffix;
 
         protected override void Build(RectTransform root)
         {
@@ -108,13 +112,13 @@ namespace MalatangStory.Game
             body.parent.gameObject.AddComponent<PopIn>();
             lines = new[]
             {
-                "売上　　　　" + RestaurantSimulation.Money(r.revenueFen) + (r.discountsFen > 0 ? "（値引き -" + RestaurantSimulation.Money(r.discountsFen) + "）" : ""),
-                "チップ　　　" + RestaurantSimulation.Money(r.tipsFen),
-                "報酬・賞金　" + RestaurantSimulation.Money(r.missionRewardsFen + r.prizeFen),
-                "食材原価　 -" + RestaurantSimulation.Money(r.foodCostFen),
-                "固定費　　 -" + RestaurantSimulation.Money(r.fixedCostFen),
-                "人件費　　 -" + RestaurantSimulation.Money(r.wagesFen),
-                "おつり過払い -" + RestaurantSimulation.Money(r.changeLossFen),
+                "売上　　　　" + RestaurantSimulation.MoneyOrDash(r.revenueFen) + (r.discountsFen > 0 ? "（値引き -" + RestaurantSimulation.Money(r.discountsFen) + "）" : ""),
+                "チップ　　　" + RestaurantSimulation.MoneyOrDash(r.tipsFen),
+                "報酬・賞金　" + RestaurantSimulation.MoneyOrDash(r.missionRewardsFen + r.prizeFen),
+                "食材原価　　" + RestaurantSimulation.MoneyOrDash(-r.foodCostFen),
+                "固定費　　　" + RestaurantSimulation.MoneyOrDash(-r.fixedCostFen),
+                "人件費　　　" + RestaurantSimulation.MoneyOrDash(-r.wagesFen),
+                "おつり過払い " + RestaurantSimulation.MoneyOrDash(-r.changeLossFen),
                 "営業利益　　" + RestaurantSimulation.Money(r.ProfitFen) + "",
                 "",
                 "仕入れ支出　" + RestaurantSimulation.Money(r.purchasesFen) + "　設備・内装 " + RestaurantSimulation.Money(r.investmentFen),
@@ -124,6 +128,7 @@ namespace MalatangStory.Game
                 "最高コンボ " + r.bestCombo + "　おつりぴったり " + r.exactChange + "回　不満 " + r.complaints + "件　ミッション " + S.missions.Count(m => m.done) + "/" + S.missions.Count,
                 "評判 " + (r.reputationDelta >= 0 ? "+" : "") + r.reputationDelta + "　経験値 +" + r.experience + "　所持金 " + RestaurantSimulation.Money(S.moneyFen),
             };
+            revenueSuffix = r.discountsFen > 0 ? "（値引き -" + RestaurantSimulation.Money(r.discountsFen) + "）" : "";
             numbers = UIKit.Label(body, "", 19, UIKit.Ink, TextAnchor.UpperLeft);
             numbers.rectTransform.anchorMin = new Vector2(0, 0); numbers.rectTransform.anchorMax = new Vector2(.47f, 1);
             numbers.rectTransform.offsetMin = new Vector2(0, 80); numbers.rectTransform.offsetMax = new Vector2(-10, 0);
@@ -137,7 +142,15 @@ namespace MalatangStory.Game
             UIKit.Place(hTitle.rectTransform, new Vector2(0, 1), new Vector2(0, -226), new Vector2(530, 26));
             var highlights = r.highlights.Count > 0 ? string.Join("\n", r.highlights.Take(4)) : "穏やかな一日でした。";
             var hText = UIKit.Label(right, highlights, 15, UIKit.Ink, TextAnchor.UpperLeft);
-            UIKit.Place(hText.rectTransform, new Vector2(0, 1), new Vector2(0, -252), new Vector2(530, 84));
+            UIKit.Place(hText.rectTransform, new Vector2(0, 1), new Vector2(0, -252), new Vector2(r.bestBowl == null ? 530 : 350, 84));
+            if (r.bestBowl != null && r.bestBowl.ingredients.Count > 0)
+            {
+                var photo = UIKit.Rect("Best Bowl Photo", right).gameObject.AddComponent<RawImage>();
+                photo.texture = BowlPortrait.Get(r.bestBowl);
+                UIKit.Place(photo.rectTransform, new Vector2(1, 0), new Vector2(0, 0), new Vector2(156, 156));
+                var caption = UIKit.Label(photo.transform, "今日の一杯・" + r.bestBowl.quality + "点", 15, UIKit.Lacquer, TextAnchor.LowerCenter, true);
+                UIKit.Fill(caption.rectTransform);
+            }
             var reviews = r.reviews.Count > 0 ? r.reviews[r.reviews.Count - 1] : "—";
             var rText = UIKit.Label(right, "お客さんの声　" + reviews, 14, UIKit.InkSoft, TextAnchor.UpperLeft);
             UIKit.Place(rText.rectTransform, new Vector2(0, 1), new Vector2(0, -340), new Vector2(530, 50));
@@ -151,7 +164,7 @@ namespace MalatangStory.Game
             UIKit.Button(row, "仕入れ", () => App.Open(GameScreen.Shop), tutorial ? ButtonStyle.Primary : ButtonStyle.Secondary, 20, IconKind.Cart);
             UIKit.Button(row, "経営", () => App.Open(GameScreen.Management), ButtonStyle.Secondary, 20, IconKind.Chart, !tutorial);
             UIKit.Button(row, "内装", () => App.Open(GameScreen.Build), ButtonStyle.Secondary, 20, IconKind.Hammer, !tutorial);
-            var next = UIKit.Button(row, tutorial ? "仕入れをしてから翌日へ" : "翌日へ", () => { if (Sim.NextDay()) App.Open(GameScreen.Morning); }, tutorial ? ButtonStyle.Secondary : ButtonStyle.Primary, 20, IconKind.ArrowRight, !tutorial);
+            var next = UIKit.Button(row, App.InChallenge ? "通常の店舗へ・記録する" : tutorial ? "仕入れをしてから翌日へ" : "翌日へ", () => { if (App.InChallenge) App.LeaveChallenge(); else if (Sim.NextDay()) App.Open(GameScreen.Morning); }, tutorial ? ButtonStyle.Secondary : ButtonStyle.Primary, 20, IconKind.ArrowRight, !tutorial);
             App.Audio.Play(Sfx.CoinJingle, .7f);
         }
 
@@ -179,8 +192,13 @@ namespace MalatangStory.Game
             var days = S.history.Skip(System.Math.Max(0, S.history.Count - 7)).ToList();
             var frame = UIKit.Panel(right, UIKit.PaperDark, 14, false, "Chart");
             var rt = UIKit.Place(frame.rectTransform, new Vector2(0, 1), new Vector2(0, -94), new Vector2(530, 124));
-            var title = UIKit.Label(rt, "直近" + days.Count + "日の営業利益", 14, UIKit.InkSoft, TextAnchor.MiddleLeft, true);
+            var title = UIKit.Label(rt, "直近7日の営業利益" + (days.Count < 7 ? "（あと" + (7 - days.Count) + "日で1週間）" : ""), 14, UIKit.InkSoft, TextAnchor.MiddleLeft, true);
             UIKit.Place(title.rectTransform, new Vector2(0, 1), new Vector2(10, -2), new Vector2(300, 22));
+            for (int i = days.Count; i < 7; i++)
+            {
+                var ghost = UIKit.Panel(rt, new Color(.35f, .3f, .25f, .1f), 4, false, "Future Day " + i);
+                UIKit.Place(ghost.rectTransform, new Vector2(0, 0), new Vector2(14 + i * (510f / 7) + 14, 22), new Vector2(36, 64));
+            }
             if (days.Count == 0) return;
             long max = System.Math.Max(1, days.Max(d => System.Math.Abs(d.profitFen)));
             bool anyLoss = days.Any(d => d.profitFen < 0);
@@ -200,9 +218,16 @@ namespace MalatangStory.Game
 
         public override void Tick(float deltaTime)
         {
-            reveal += deltaTime * 6;
-            int count = Mathf.Min(lines.Length, Mathf.FloorToInt(reveal));
-            numbers.text = string.Join("\n", lines.Take(count));
+            reveal += deltaTime;
+            float progress = S.reducedMotion ? 1 : Mathf.SmoothStep(0, 1, reveal / 1.1f);
+            int count = S.reducedMotion ? lines.Length : Mathf.Min(lines.Length, Mathf.FloorToInt(reveal * 18));
+            long revenue = progress >= 1 ? S.report.revenueFen : (long)(S.report.revenueFen * (double)progress);
+            long profit = progress >= 1 ? S.report.ProfitFen : (long)(S.report.ProfitFen * (double)progress);
+            if (revenue == shownRevenue && profit == shownProfit && count == shownLineCount) return;
+            shownRevenue = revenue; shownProfit = profit; shownLineCount = count;
+            lines[0] = "売上　　　　" + RestaurantSimulation.MoneyOrDash(revenue) + revenueSuffix;
+            lines[7] = "営業利益　　" + RestaurantSimulation.MoneyOrDash(profit);
+            numbers.text = string.Join("\n", lines, 0, count);
         }
     }
 

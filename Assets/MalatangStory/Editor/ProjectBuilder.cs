@@ -39,6 +39,28 @@ namespace MalatangStory.Editor
                 rendererData.postProcessData=AssetDatabase.LoadAssetAtPath<PostProcessData>("Packages/com.unity.render-pipelines.universal/Runtime/Data/PostProcessData.asset");
                 EditorUtility.SetDirty(rendererData);
             }
+            if(rendererData!=null)
+            {
+                const string aoPath="Assets/MalatangStory/Resources/RestaurantSSAO.asset";
+                var ao=AssetDatabase.LoadAssetAtPath<ScreenSpaceAmbientOcclusion>(aoPath);
+                if(ao==null)
+                {
+                    ao=ScriptableObject.CreateInstance<ScreenSpaceAmbientOcclusion>();
+                    ao.name="Restaurant Ambient Occlusion";
+                    AssetDatabase.CreateAsset(ao,aoPath);
+                    var settings=new SerializedObject(ao);
+                    settings.FindProperty("m_Settings.Downsample").boolValue=true;
+                    settings.FindProperty("m_Settings.Intensity").floatValue=.65f;
+                    settings.FindProperty("m_Settings.Radius").floatValue=.12f;
+                    settings.FindProperty("m_Settings.Samples").intValue=2;
+                    settings.ApplyModifiedPropertiesWithoutUndo();
+                }
+                if(!rendererData.rendererFeatures.Contains(ao))
+                {
+                    rendererData.rendererFeatures.Add(ao);
+                    EditorUtility.SetDirty(rendererData);
+                }
+            }
             GraphicsSettings.defaultRenderPipeline=pipeline;
             QualitySettings.renderPipeline=pipeline;
             PlayerSettings.companyName="MalatangStory";PlayerSettings.productName="Malatang Story";
@@ -51,13 +73,18 @@ namespace MalatangStory.Editor
             PlayerSettings.fullScreenMode=FullScreenMode.Windowed;
             PlayerSettings.runInBackground=false;
             PlayerSettings.iOS.targetOSVersionString="15.0";
-            PlayerSettings.bundleVersion="1.7.0";
+            PlayerSettings.bundleVersion="1.8.0";
+            PlayerSettings.enableFrameTimingStats=true;
             var serialized=new SerializedObject(AssetDatabase.LoadAllAssetsAtPath("ProjectSettings/ProjectSettings.asset")[0]);
             var input=serialized.FindProperty("activeInputHandler");if(input!=null)input.intValue=1;
             serialized.ApplyModifiedPropertiesWithoutUndo();
-            var scene=EditorSceneManager.NewScene(NewSceneSetup.EmptyScene,NewSceneMode.Single);
-            new GameObject("Malatang Story").AddComponent<GameApplication>();
-            EditorSceneManager.SaveScene(scene,"Assets/MalatangStory/Scenes/Restaurant.unity");
+            const string scenePath="Assets/MalatangStory/Scenes/Restaurant.unity";
+            if(!File.Exists(scenePath))
+            {
+                var scene=EditorSceneManager.NewScene(NewSceneSetup.EmptyScene,NewSceneMode.Single);
+                new GameObject("Malatang Story").AddComponent<GameApplication>();
+                EditorSceneManager.SaveScene(scene,scenePath);
+            }
             EditorBuildSettings.scenes=new[]{new EditorBuildSettingsScene("Assets/MalatangStory/Scenes/Restaurant.unity",true)};
             AssetDatabase.SaveAssets();
             Debug.Log("MALATANG_SETUP_SUCCESS");

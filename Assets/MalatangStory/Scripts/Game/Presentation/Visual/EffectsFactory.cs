@@ -23,7 +23,9 @@ namespace MalatangStory.Game
         public static ParticleSystem Steam(Transform parent, float intensity)
         {
             Validate(intensity, nameof(intensity));
-            ParticleSystem ps = Create("Steam", parent, Vector3.zero, true, 48, 2.2f, 0.08f, 0.12f, new Color(0.96f, 0.94f, 0.88f, 0.22f), 12f, 0);
+            ParticleSystem ps = Create("Steam", parent, Vector3.zero, true, 48, 2.2f, 0.1f, 0.16f, new Color(0.96f, 0.94f, 0.88f, 0.4f), 12f, 0);
+            ps.GetComponent<ParticleSystemRenderer>().sharedMaterial = MaterialLibrary.Particles(Color.white, TextureFactory.SteamNoise(64));
+            var main = ps.main; main.scalingMode = ParticleSystemScalingMode.Shape;
             Cone(ps, 0.13f, 12f);
             ParticleSystem.NoiseModule noise = ps.noise; noise.enabled = true; noise.strength = 0.045f; noise.frequency = 0.65f; noise.scrollSpeed = 0.2f; noise.quality = ParticleSystemNoiseQuality.Low;
             SizeCurve(ps, 0.35f, 1.6f);
