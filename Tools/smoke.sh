@@ -11,7 +11,7 @@ OUT="$ROOT/Builds/Verification"
 mkdir -p "$OUT"; rm -f "$OUT"/*.png "$OUT"/smoke-* "$OUT"/perf.json "$OUT"/perf-low.json "$OUT"/verification.json "$OUT"/business-proof.json "$OUT"/Photos/*.png
 "$ROOT/Builds/Mac/Malatang Story.app/Contents/MacOS/Malatang Story" --malatang-smoke "$OUT" -screen-width 1280 -screen-height 720 -screen-fullscreen 0 -logFile /tmp/malatang-player.log &
 PID=$!
-for i in $(seq 1 420); do sleep 1; kill -0 $PID 2>/dev/null || break; done
+for i in $(seq 1 600); do sleep 1; kill -0 $PID 2>/dev/null || break; done
 kill $PID 2>/dev/null; wait $PID 2>/dev/null
 cat "$OUT/smoke-result.json" 2>/dev/null; echo
 cat "$OUT/smoke-failure.txt" 2>/dev/null | head -20

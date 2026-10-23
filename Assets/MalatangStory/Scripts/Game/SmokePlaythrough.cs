@@ -797,6 +797,8 @@ namespace MalatangStory.Game
         /// <summary>描画が完了した画面をPNGファイルに保存する。</summary>
         private IEnumerator Capture(string name)
         {
+            // 出入りのアニメーション中を最終画面と誤認しないよう、切り替えとカメラが落ち着いてから撮る。
+            yield return new WaitForSecondsRealtime(.6f);
             yield return new WaitForEndOfFrame();
             // モバイルでは CaptureScreenshot のパスが保存領域からの相対になるため、テクスチャ経由で書き出す。
             var texture = ScreenCapture.CaptureScreenshotAsTexture();

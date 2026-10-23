@@ -135,7 +135,7 @@ namespace MalatangStory.Game
             numbers = UIKit.Label(body, "", 19, UIKit.Ink, TextAnchor.UpperLeft);
             numbers.rectTransform.anchorMin = new Vector2(0, 0); numbers.rectTransform.anchorMax = new Vector2(.47f, 1);
             numbers.rectTransform.offsetMin = new Vector2(0, 80); numbers.rectTransform.offsetMax = new Vector2(-10, 0);
-            numbers.resizeTextForBestFit = false;
+            numbers.resizeTextForBestFit = false; numbers.lineSpacing = .88f;
 
             var right = UIKit.Rect("Right", body);
             right.anchorMin = new Vector2(.47f, 0); right.anchorMax = Vector2.one; right.offsetMin = new Vector2(10, 76); right.offsetMax = Vector2.zero;
@@ -156,7 +156,7 @@ namespace MalatangStory.Game
             }
             var reviews = r.reviews.Count > 0 ? r.reviews[r.reviews.Count - 1] : "—";
             var rText = UIKit.Label(right, "お客さんの声　" + reviews, 14, UIKit.InkSoft, TextAnchor.UpperLeft);
-            UIKit.Place(rText.rectTransform, new Vector2(0, 1), new Vector2(0, -340), new Vector2(530, 50));
+            UIKit.Place(rText.rectTransform, new Vector2(0, 1), new Vector2(0, -340), new Vector2(r.bestBowl == null ? 530 : 350, 82));
 
             var row = UIKit.Rect("Buttons", body);
             row.anchorMin = new Vector2(0, 0); row.anchorMax = new Vector2(1, 0); row.pivot = new Vector2(.5f, 0);
