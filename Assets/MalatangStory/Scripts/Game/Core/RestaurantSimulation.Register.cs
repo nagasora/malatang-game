@@ -82,6 +82,7 @@ namespace MalatangStory.Game
         /// </summary>
         public bool ConfirmTicket(string id, string soupId, int spice, bool takeout, bool usedHint = false)
         {
+            if (Find(id)?.delivery == true && !takeout) return Fail("出前の注文は持ち帰りで受け付けます。");
             var o = Find(id);
             if (o == null || o.stage != OrderStage.Ordering) return false;
             if (o.ticketConfirmed) return true;

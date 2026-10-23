@@ -43,6 +43,13 @@ namespace MalatangStory.Ingredients.Tests
             Assert.IsTrue(sim.StaffMeal(member.id, stock.ingredientId)); Assert.IsFalse(sim.StaffMeal(member.id, stock.ingredientId));
             Assert.AreEqual(quantity - 1, stock.quantity); Assert.AreEqual(65, member.motivation); Assert.AreEqual(45, member.fatigue);
         }
+        [Test] public void ChattyStaffEncourageAnIdleColleagueButNeverInterruptWork()
+        {
+            var sim = Sim(); sim.HireStaff(StaffRole.Server); sim.HireStaff(StaffRole.Server);
+            foreach (var member in sim.State.staff) { member.personality = 2; member.motivation = 50; }
+            sim.StaffWork.Tick(90); Assert.AreEqual(52, sim.State.staff[0].motivation); Assert.AreEqual(52, sim.State.staff[1].motivation);
+            sim.State.staff[1].busySeconds = 100; sim.StaffWork.Tick(90); Assert.AreEqual(52, sim.State.staff[0].motivation);
+        }
         [Test] public void OldStaffWithoutIdsGainReproducibleIdsAndKeepTheirJobs()
         {
             var sim = Sim(); sim.State.saveVersion = 9;

@@ -11,13 +11,40 @@ namespace MalatangStory.Game
         public const long MinimumMoney = -1000000000L, MaximumMoney = 1000000000000L;
         public const int MaximumOrders = 200, MaximumItems = 100, MaximumExperience = 100000000;
 
+        private static void NormalizeStaff(GameState s)
+        {
+            s.staff = Bound(s.staff, 9); s.staff.RemoveAll(m => m == null);
+            var staffIds = new HashSet<string>();
+            s.nextStaffId = (int)Clamp(s.nextStaffId, 1, 100000000);
+            for (int i = 0; i < s.staff.Count; i++)
+            {
+                var m = s.staff[i];
+                m.name = PlayerText.Clean(m.name, 32); m.busySeconds = Finite(m.busySeconds, 0, 10000);
+                m.id = PlayerText.Clean(m.id, 80);
+                if (m.id.Length == 0 || !staffIds.Add(m.id))
+                { do { m.id = "staff-" + s.nextStaffId++; } while (!staffIds.Add(m.id)); }
+                m.fatigue = Finite(m.fatigue, 0, 100); m.motivation = Finite(m.motivation, 0, 100);
+                m.personality = (int)Clamp(m.personality, 0, 2);
+                m.praisedDay = (int)Clamp(m.praisedDay, 0, s.day); m.mealDay = (int)Clamp(m.mealDay, 0, s.day);
+            }
+        }
+
         public static void Normalize(GameState s)
         {
+            var catalog = IngredientCatalog.Load();
+            s.lastBrokenCombo = (int)Clamp(s.lastBrokenCombo, 0, 1000000); s.comboRecoveryUntil = Finite(s.comboRecoveryUntil, 0, RestaurantSimulation.DayDuration + 30);
+            s.comboMilestones = Bound(s.comboMilestones, 4); s.comboMilestones.RemoveAll(x => x != 10 && x != 25 && x != 50 && x != 100); s.comboMilestones = s.comboMilestones.Distinct().ToList();
+            s.stallMenu = Bound(s.stallMenu, 5); s.stallMenu.RemoveAll(id => !catalog.ingredients.Any(x => x.id == id && !x.isRare));
+            if (s.stallMenu.Count < 3) s.festivalStall = false;
             s.introducedArchetypes = Bound(s.introducedArchetypes, 30);
             s.introducedArchetypes.RemoveAll(id => !Content.Archetypes.Any(x => x.Id == id));
             if (s.challengeMode != ChallengeRules.Rush && s.challengeMode != ChallengeRules.Weekly) s.challengeMode = "";
             s.challengeSeed = (int)Clamp(s.challengeSeed, 0, 1000000);
             s.challengeRule = s.challengeMode.Length == 0 ? "" : ChallengeRules.Rule(s.challengeMode, s.challengeSeed);
+            s.neighbourGiftDay = (int)Clamp(s.neighbourGiftDay, 0, s.day); s.rivalContestDay = (int)Clamp(s.rivalContestDay, 0, s.day);
+            s.rivalResolvedDay = (int)Clamp(s.rivalResolvedDay, 0, s.day); s.franchiseNumber = (int)Clamp(s.franchiseNumber, 0, 10000);
+            s.rivalReputation = Finite(s.rivalReputation, 0, 100);
+            s.walkInVisitors = (int)Clamp(s.walkInVisitors, 0, 3);
             s.rushWarnings = (int)Clamp(s.rushWarnings, 0, 3);
             s.challengeRecords = Bound(s.challengeRecords, 32);
             var challengeIds = new HashSet<string>();
@@ -62,7 +89,7 @@ namespace MalatangStory.Game
             s.nextOrderNumber = (int)Clamp(s.nextOrderNumber, 1, 100000000);
             s.nextFurnitureUid = (int)Clamp(s.nextFurnitureUid, 1, 10000000);
             s.nextSignatureNumber = (int)Clamp(s.nextSignatureNumber, 1, 100000000);
-            var ids = new HashSet<string>(IngredientCatalog.Load().ingredients.Select(x => x.id));
+            var ids = new HashSet<string>(catalog.ingredients.Select(x => x.id));
             s.stock = Bound(s.stock, ids.Count);
             var stocks = new HashSet<string>();
             s.stock.RemoveAll(x => x == null || !ids.Contains(x.ingredientId) || !stocks.Add(x.ingredientId));
@@ -72,6 +99,7 @@ namespace MalatangStory.Game
             s.orders.RemoveAll(o => o == null || string.IsNullOrEmpty(o.id) || !orders.Add(o.id));
             foreach (var o in s.orders)
             {
+                if (o.bowlStyle != "jade" && o.bowlStyle != "paper" && !Content.Themes.Any(x => x.Id == o.bowlStyle)) o.bowlStyle = "";
                 if (!CustomerWishes.Kinds.Contains(o.wish)) o.wish = "";
                 o.returnNote = PlayerText.Clean(o.returnNote, 120);
                 o.garnishStrokes = GarnishStroke.Normalize(o.garnishStrokes);
@@ -85,11 +113,13 @@ namespace MalatangStory.Game
                 for (int i = 0; i < o.dropTimes.Count; i++) o.dropTimes[i] = Finite(o.dropTimes[i], -1, 10000);
                 o.condiments = Bound(o.condiments, MaximumItems); o.requestedCondiments = Bound(o.requestedCondiments, MaximumItems);
                 o.dislikedCondiments = Bound(o.dislikedCondiments, MaximumItems); o.pairings = Bound(o.pairings, MaximumItems);
+                o.deliverySeconds = Finite(o.deliverySeconds, 0, 10000); o.deliveryDuration = Finite(o.deliveryDuration, 1, 90);
+                if (o.delivery) o.takeout = true;
                 o.heatSeconds = Finite(o.heatSeconds, 0, 10000); o.elapsed = Finite(o.elapsed, 0, 10000);
                 o.patience = Finite(o.patience, 1, 10000); o.visualSeconds = Finite(o.visualSeconds, 0, 10000);
                 o.handRhythm = (int)Clamp(o.handRhythm, 0, 3); o.lastHandShake = Finite(o.lastHandShake, -1, 1000000000);
                 o.quality = Finite(o.quality, 0, 100); o.serviceBonus = Finite(o.serviceBonus, -100, 100);
-                o.weighedGrams = Finite(o.weighedGrams, 0, 10000); o.soupMl = Finite(o.soupMl, 0, 10000);
+                o.weighedGrams = Finite(o.weighedGrams, 0, 10000); o.soupMl = Finite(o.soupMl, 0, 10000); o.counterSpillMl = Finite(o.counterSpillMl, 0, 100);
                 o.targetGrams = Finite(o.targetGrams, 0, 10000);
                 o.spice = (int)Clamp(o.spice, 0, 5); o.chosenSpice = (int)Clamp(o.chosenSpice, 0, 5);
                 o.paidFen = Clamp(o.paidFen, 0, 100000000); o.billFen = Clamp(o.billFen, 0, 100000000);
@@ -121,20 +151,7 @@ namespace MalatangStory.Game
                 regular.lastVisitDay = (int)Clamp(regular.lastVisitDay, 0, s.day);
                 regular.answeredStory = (int)Clamp(regular.answeredStory, 0, regular.storyIndex);
             }
-            s.staff = Bound(s.staff, 9); s.staff.RemoveAll(m => m == null);
-            var staffIds = new HashSet<string>();
-            s.nextStaffId = (int)Clamp(s.nextStaffId, 1, 100000000);
-            for (int i = 0; i < s.staff.Count; i++)
-            {
-                var m = s.staff[i];
-                m.name = PlayerText.Clean(m.name, 32); m.busySeconds = Finite(m.busySeconds, 0, 10000);
-                m.id = PlayerText.Clean(m.id, 80);
-                if (m.id.Length == 0 || !staffIds.Add(m.id))
-                { do { m.id = "staff-" + s.nextStaffId++; } while (!staffIds.Add(m.id)); }
-                m.fatigue = Finite(m.fatigue, 0, 100); m.motivation = Finite(m.motivation, 0, 100);
-                m.personality = (int)Clamp(m.personality, 0, 2);
-                m.praisedDay = (int)Clamp(m.praisedDay, 0, s.day); m.mealDay = (int)Clamp(m.mealDay, 0, s.day);
-            }
+            NormalizeStaff(s);
             s.history = Bound(s.history, DayGrade.HistoryLimit, true);
             s.recentReviews = Texts(s.recentReviews, 20, 300);
             s.report ??= new DailyReport(); s.report.reviews = Texts(s.report.reviews, 50, 300); s.report.highlights = Texts(s.report.highlights, 50, 300);
@@ -156,6 +173,7 @@ namespace MalatangStory.Game
             foreach (var entry in s.album ?? new List<AlbumEntry>())
             {
                 if (entry == null) continue;
+                if (entry.bowlStyle != "jade" && entry.bowlStyle != "paper" && !Content.Themes.Any(x => x.Id == entry.bowlStyle)) entry.bowlStyle = "";
                 entry.garnishStrokes = GarnishStroke.Normalize(entry.garnishStrokes);
                 entry.customerName = PlayerText.Clean(entry.customerName, 32);
                 entry.ingredients = Bound(entry.ingredients, MaximumItems); entry.condiments = Bound(entry.condiments, MaximumItems);
@@ -163,6 +181,7 @@ namespace MalatangStory.Game
             if (s.report?.bestBowl != null)
             {
                 var bowl = s.report.bestBowl;
+                if (bowl.bowlStyle != "jade" && bowl.bowlStyle != "paper" && !Content.Themes.Any(x => x.Id == bowl.bowlStyle)) bowl.bowlStyle = "";
                 bowl.ingredients = Bound(bowl.ingredients, MaximumItems); bowl.ingredients.RemoveAll(x => !ids.Contains(x));
                 bowl.condiments = Bound(bowl.condiments, MaximumItems); bowl.condiments.RemoveAll(x => !Content.Condiments.Any(c => c.Id == x));
                 bowl.garnishStrokes = GarnishStroke.Normalize(bowl.garnishStrokes);
@@ -170,6 +189,12 @@ namespace MalatangStory.Game
                 bowl.score = Finite(bowl.score, 0, 100); bowl.quality = (int)Clamp(bowl.quality, 0, 100);
                 if (!Content.Soups.Any(x => x.Id == bowl.soup) || bowl.ingredients.Count == 0) s.report.bestBowl = null;
             }
+            s.collectionRewardTier = Math.Max((int)Clamp(s.collectionRewardTier, 0, 4), CollectionRewards.Percent(s, catalog) / 25);
+            int collection = CollectionRewards.UnlockedPercent(s, catalog);
+            if (collection < 25 && s.chef != null) s.chef.embroidery = false;
+            if (collection < 50) s.collectionBowl = false;
+            if (collection < 75) s.collectionPennant = false;
+            if (collection < 100) s.collectionTitle = false;
             s.dirtyTables = Bound(s.dirtyTables, 104); s.mealRemains = Bound(s.mealRemains, MaximumOrders);
         }
 

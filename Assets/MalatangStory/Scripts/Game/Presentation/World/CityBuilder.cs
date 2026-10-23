@@ -27,8 +27,10 @@ namespace MalatangStory.Game
             MaterialLibrary.Lit(new Color(.56f, .48f, .43f), .2f)
         };
         private Transform seasonalRoot;
+        private TextMesh rivalSign;
+        private string originalRivalSign;
         private string seasonalId;
-        private bool seasonalSnow, seasonalQuality;
+        private bool seasonalSnow, seasonalRain, seasonalQuality;
         private Material windows, pinkNeon, cyanNeon, warmLight, redNeon;
         private static readonly string[] ShopNames = { "便利商店", "理髪 サクラ", "くすり", "香港茶餐廳", "手機修理", "青果 山田", "酒処 路地", "餃子・拉麵" };
 
@@ -64,17 +66,22 @@ namespace MalatangStory.Game
             return life;
         }
 
+        public void SetRivalActive(bool active)
+        {
+            if (rivalSign != null) rivalSign.text = active ? "向かいの麻辣湯店" : originalRivalSign;
+        }
+
         /// <summary>街路樹・植栽・歩道を季節別に結合し、変更時だけ旧メッシュを破棄します。</summary>
         public void ApplySeason(string seasonId, string weatherId, bool highQuality)
         {
-            bool snow = seasonId == "winter" && weatherId == "cold";
-            if (seasonalRoot != null && seasonalId == seasonId && seasonalSnow == snow && seasonalQuality == highQuality) return;
+            bool snow = seasonId == "winter" && weatherId == "cold"; bool rainy = weatherId == "rain";
+            if (seasonalRoot != null && seasonalId == seasonId && seasonalSnow == snow && seasonalRain == rainy && seasonalQuality == highQuality) return;
             if (seasonalRoot != null)
             {
                 seasonalRoot.gameObject.SetActive(false);
                 UnityEngine.Object.Destroy(seasonalRoot.gameObject);
             }
-            seasonalId = seasonId; seasonalSnow = snow; seasonalQuality = highQuality;
+            seasonalId = seasonId; seasonalSnow = snow; seasonalRain = rainy; seasonalQuality = highQuality;
             seasonalRoot = new GameObject("Seasonal Street").transform;
             seasonalRoot.SetParent(root, false);
             Material bark = MaterialLibrary.Lit(new Color(.34f, .23f, .17f), .25f);
@@ -121,6 +128,12 @@ namespace MalatangStory.Game
                         float z = front - .5f - Mathf.Repeat(i * .73f, 2.7f);
                         g.Add(leaf, new Vector3(x, .012f, z), Vector3.one, Quaternion.Euler(0, i * 137, 0), i % 2 == 0 ? leaves : alternate);
                     }
+                }
+                if (rainy)
+                {
+                    var wet = MaterialLibrary.Lit(new Color(.25f, .3f, .32f), .92f, .2f);
+                    foreach (float x in new[] { -17f, -9f, 9f, 17f })
+                        g.Box(new Vector3(x, .012f, front - 2.7f), new Vector3(1.5f, .009f, .42f), wet);
                 }
                 if (snow)
                 {
@@ -211,7 +224,7 @@ namespace MalatangStory.Game
         /// <summary>一階店舗と階ごとの窓、ベランダ、室外機、雨どいを作ります。</summary>
         private void BuildBuilding(CityGeometry g, float x, float edge, float width, float depth, int style, bool opposite, bool labeled)
         {
-            var lot = StreetVisualRules.Lot(4107, style);
+            var lot = StreetVisualRules.Lot(store.CitySeed, style);
             width *= lot.Width;
             int floors = lot.Floors;
             float height = floors * 2.6f + .4f;
@@ -245,7 +258,8 @@ namespace MalatangStory.Game
             g.Box(new Vector3(x, 3.06f, edge - direction * .36f), new Vector3(width, .12f, .8f), white);
             if (labeled)
             {
-                store.Label(ShopNames[style % ShopNames.Length], new Vector3(x, 2.65f, edge - direction * .35f), Quaternion.Euler(0, opposite ? 180 : 0, 0), .04f, Color.white, root);
+                var sign = store.Label(store.RivalActive && style == 12 ? "向かいの麻辣湯店" : ShopNames[((style + store.CitySeed % ShopNames.Length) % ShopNames.Length + ShopNames.Length) % ShopNames.Length], new Vector3(x, 2.65f, edge - direction * .35f), Quaternion.Euler(0, opposite ? 180 : 0, 0), .04f, Color.white, root);
+                if (style == 12) { rivalSign = sign; originalRivalSign = ShopNames[((style + store.CitySeed % ShopNames.Length) % ShopNames.Length + ShopNames.Length) % ShopNames.Length]; }
                 if (style % 2 == 0)
                 {
                     float sx = x + width * .43f;

@@ -8,7 +8,7 @@ if [[ "$1" != "--no-build" ]]; then
   grep -q MALATANG_MAC_BUILD_SUCCESS /tmp/malatang-build-mac.log || { echo BUILD_FAILED; grep -E "error" /tmp/malatang-build-mac.log | head; exit 1; }
 fi
 OUT="$ROOT/Builds/Verification"
-mkdir -p "$OUT"; rm -f "$OUT"/*.png "$OUT"/smoke-* "$OUT"/perf.json "$OUT"/perf-low.json "$OUT"/verification.json
+mkdir -p "$OUT"; rm -f "$OUT"/*.png "$OUT"/smoke-* "$OUT"/perf.json "$OUT"/perf-low.json "$OUT"/verification.json "$OUT"/business-proof.json "$OUT"/Photos/*.png
 "$ROOT/Builds/Mac/Malatang Story.app/Contents/MacOS/Malatang Story" --malatang-smoke "$OUT" -screen-width 1280 -screen-height 720 -screen-fullscreen 0 -logFile /tmp/malatang-player.log &
 PID=$!
 for i in $(seq 1 420); do sleep 1; kill -0 $PID 2>/dev/null || break; done

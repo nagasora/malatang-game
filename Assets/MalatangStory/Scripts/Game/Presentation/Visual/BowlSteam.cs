@@ -17,8 +17,8 @@ namespace MalatangStory.Game
             string season = Seasons.Of(state.day).Id;
             float seasonal = season == "winter" ? 1.5f : season == "summer" ? .6f : 1;
             float age = order.stage == OrderStage.Served ? order.eatSeconds : Time.time - initialAge;
-            float intensity = order.mealFinished ? 0 : seasonal * Mathf.Clamp01(1 - age / RestaurantSimulation.EatDuration);
-            EffectsFactory.SetIntensity(particles, intensity * .7f);
+            float intensity = order.mealFinished || order.takeout && order.stage == OrderStage.Served ? 0 : seasonal * Mathf.Clamp01(1 - age / RestaurantSimulation.EatDuration);
+            EffectsFactory.SetIntensity(particles, intensity * .7f * (state.highQuality ? 1 : .4f));
         }
     }
 }

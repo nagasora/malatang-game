@@ -61,6 +61,7 @@ namespace MalatangStory.Game
             var header = UIKit.Panel(card, UIKit.Lacquer, 22, false, "Header").rectTransform;
             header.anchorMin = new Vector2(0, 1); header.anchorMax = new Vector2(1, 1); header.pivot = new Vector2(.5f, 1);
             header.sizeDelta = new Vector2(0, 56); header.anchoredPosition = Vector2.zero;
+            UIKit.ReceiptPerforations(card);
             var icon = UIKit.Icon(header, IconKind.Bell, UIKit.Gold);
             UIKit.Place(icon.rectTransform, new Vector2(0, .5f), new Vector2(18, 0), new Vector2(30, 30));
             title = UIKit.Label(header, "", 24, UIKit.Paper, TextAnchor.MiddleLeft, true, "Title");

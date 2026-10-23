@@ -22,9 +22,11 @@ namespace MalatangStory.Game
         private readonly Volume volume;
         private readonly Bloom bloom;
         private readonly ColorAdjustments color;
+        private readonly DepthOfField focusBlur;
         private readonly MaterialPropertyBlock block;
         private Color interiorColor = new Color(1f, .62f, .35f);
         private bool highQuality = true;
+        private float nextNeonTick;
         private float current = -1;
         private string seasonId;
         private Color seasonalSun, seasonalAmbient, seasonalSky;
@@ -69,7 +71,9 @@ namespace MalatangStory.Game
             bloom = profile.Add<Bloom>(true); bloom.threshold.Override(.95f); bloom.intensity.Override(.45f); bloom.scatter.Override(.65f);
             color = profile.Add<ColorAdjustments>(true); color.saturation.Override(12); color.contrast.Override(8); color.postExposure.Override(.1f);
             var vignette = profile.Add<Vignette>(true); vignette.intensity.Override(.22f); vignette.smoothness.Override(.5f);
+            focusBlur = profile.Add<DepthOfField>(true); focusBlur.mode.Override(DepthOfFieldMode.Gaussian); focusBlur.gaussianMaxRadius.Override(.5f); focusBlur.active = false;
             volume.sharedProfile = profile;
+            volumeObject.AddComponent<OwnedVolumeProfile>().Profile = profile;
         }
 
         /// <summary>街の灯りには触れず、既存の室内灯二灯と提灯の色味だけを切り替えます。</summary>
@@ -126,9 +130,16 @@ namespace MalatangStory.Game
         }
 
         /// <summary>描画品質に応じて影とポストエフェクトを切り替えます。発光色は低品質でも保持します。</summary>
+        public void SetPhotoFocus(bool active, float distance)
+        {
+            focusBlur.active = active && highQuality;
+            focusBlur.gaussianStart.Override(distance + .15f); focusBlur.gaussianEnd.Override(distance + .7f);
+        }
+
         public void ApplyQuality(bool high)
         {
             highQuality = high;
+            sun.cullingMask &= ~((1 << 29) | (1 << 30));
             sun.shadows = high ? LightShadows.Soft : LightShadows.None;
             volume.enabled = high;
             camera.GetUniversalAdditionalCameraData().renderPostProcessing = high;
@@ -136,10 +147,30 @@ namespace MalatangStory.Game
         }
 
         /// <summary>時刻（0=開店11時、1=閉店20時）と段階に応じて照明を更新する。</summary>
+        private void UpdateNightEmitters(float night)
+        {
+            int index = 0;
+            foreach ((Renderer renderer, Color color) emitter in nightEmitters)
+            {
+                if (emitter.renderer == null) continue;
+                block.Clear();
+                emitter.renderer.GetPropertyBlock(block);
+                bool neon = emitter.color.g < emitter.color.r * .5f || emitter.color.b > emitter.color.r * .7f;
+                float flicker = highQuality && !UIKit.ReduceMotion && neon && Mathf.Repeat(Time.time + index++ * .37f, 13) < .11f ? .35f : 1;
+                block.SetColor("_EmissionColor", emitter.color * Mathf.Lerp(0, 4.5f, night) * flicker);
+                emitter.renderer.SetPropertyBlock(block);
+            }
+        }
+
         public void Update(float dayFraction, DayPhase phase, bool title)
         {
-            float t = title ? .82f : phase == DayPhase.Preparation ? .05f : phase == DayPhase.Report ? 1f : Mathf.Clamp01(dayFraction);
-            if (Mathf.Abs(t - current) < .002f) return;
+            float t = title ? (UIKit.ReduceMotion ? .82f : Mathf.PingPong(Time.unscaledTime / 40f, 1)) : phase == DayPhase.Preparation ? .05f : phase == DayPhase.Report ? 1f : Mathf.Clamp01(dayFraction);
+            if (Mathf.Abs(t - current) < .002f)
+            {
+                if (highQuality && !UIKit.ReduceMotion && Night01 > .6f && Time.time >= nextNeonTick)
+                { UpdateNightEmitters(Night01); nextNeonTick = Time.time + .2f; }
+                return;
+            }
             current = t;
             float elevation = Mathf.Lerp(58, 8, Mathf.SmoothStep(0, 1, t));
             sun.transform.rotation = Quaternion.Euler(elevation, -35 + t * 70, 0);
@@ -160,14 +191,7 @@ namespace MalatangStory.Game
                 block.SetColor("_EmissionColor", interiorColor * Mathf.Lerp(.45f, 3.2f, night));
                 lantern.SetPropertyBlock(block);
             }
-            foreach ((Renderer renderer, Color color) emitter in nightEmitters)
-            {
-                if (emitter.renderer == null) continue;
-                block.Clear();
-                emitter.renderer.GetPropertyBlock(block);
-                block.SetColor("_EmissionColor", emitter.color * Mathf.Lerp(0, 4.5f, night));
-                emitter.renderer.SetPropertyBlock(block);
-            }
+            UpdateNightEmitters(night);
             Night01 = night;
             if (street != null) street.SetNight(night);
             if (color != null) color.postExposure.Override(Mathf.Lerp(.15f, -.1f, night) + seasonalExposure * daylight);

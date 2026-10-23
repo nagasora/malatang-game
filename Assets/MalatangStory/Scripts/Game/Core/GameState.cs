@@ -13,7 +13,7 @@ namespace MalatangStory.Game
     /// 実際の流れ：Waiting →（レジ）Ordering → Selecting → Weighed → Heating → Drained → Finishing → Ready → Served。
     /// セルフ式はレジで量って会計するため Ordering から直接 Weighed へ進む。
     /// </summary>
-    public enum OrderStage { Waiting, Selecting, Heating, Drained, Ready, Served, Cancelled, Weighed, Finishing, Ordering }
+    public enum OrderStage { Waiting, Selecting, Heating, Drained, Ready, Served, Cancelled, Weighed, Finishing, Ordering, Delivering }
 
     /// <summary>支払い方法。</summary>
     public enum PaymentMethod { Cash, QrCode, Card }
@@ -46,7 +46,6 @@ namespace MalatangStory.Game
         public string type;
         public string archetype = "office";
         public string regularId = "";
-        public string wish = "", returnNote = "";
         public string signatureId = "";
         public OrderStyle style;
         public bool takeout;
@@ -114,6 +113,11 @@ namespace MalatangStory.Game
         public string review = "";
         public string visualState = "enter";
         public float visualSeconds;
+        public string wish = "", returnNote = "", bowlStyle = "";
+        public bool delivery, delivered;
+        public float deliverySeconds, deliveryDuration = 45;
+
+        public float counterSpillMl;
         public int handRhythm;
         public float lastHandShake = -1;
         public bool usedVisibleGauge = true, expertBowl;
@@ -151,12 +155,13 @@ namespace MalatangStory.Game
         /// <summary>本日提供した客タイプ（重複あり）。</summary>
         public List<string> servedArchetypes = new List<string>();
         public float qualitySum;
-        public AlbumEntry bestBowl;
         public List<string> reviews = new List<string>();
         public List<string> highlights = new List<string>();
         /// <summary>閉店時に人気へ加える増減（配信者など）。途中保存でも失われないよう日報に持つ。</summary>
         public float popularityDelta;
         public long ProfitFen => revenueFen + tipsFen + missionRewardsFen + prizeFen - foodCostFen - fixedCostFen - wagesFen - changeLossFen;
+        public AlbumEntry bestBowl;
+
         public float AverageQuality => served == 0 ? 0 : qualitySum / served;
     }
 
@@ -174,11 +179,6 @@ namespace MalatangStory.Game
     /// <summary>雇っているスタッフ。</summary>
     [Serializable] public sealed class HiredStaff
     {
-        public string id = "";
-        public int personality = 2;
-        public int praisedDay, mealDay;
-        public float fatigue, motivation = 70;
-        public bool resting;
         public StaffRole role;
         public string name;
         public int appearanceSeed;
@@ -186,6 +186,11 @@ namespace MalatangStory.Game
         public float busySeconds;
         public string task = "";
         public string taskTarget = "";
+        public string id = "";
+        public int personality = 2;
+        public int praisedDay, mealDay;
+        public float fatigue, motivation = 70;
+        public bool resting;
     }
 
     /// <summary>常連客。好みと親密度を覚えている。</summary>
@@ -391,6 +396,11 @@ namespace MalatangStory.Game
         /// <summary>当日の限定5個を購入済みか。</summary>
         public bool marketPurchased;
 
+        public int lastBrokenCombo;
+        public float comboRecoveryUntil;
+        public bool comboRecoveryUsed;
+        public List<int> comboMilestones = new List<int>();
+
         public bool reducedMotion, snapCamera, leftHanded;
         public int gaugeMode;
         public string interactKey = "E", buildRotateKey = "T";
@@ -399,7 +409,13 @@ namespace MalatangStory.Game
         public string activeHouseSoup = "";
         public int nextHouseSoup = 1;
         public int nextStaffId = 1;
-        public int rushWarnings;
+        public int rushWarnings, walkInVisitors;
+        public bool deliveryEnabled, festivalStall;
+        public bool collectionBowl, collectionPennant, collectionTitle;
+        public int collectionRewardTier;
+        public List<string> stallMenu = new List<string>();
+        public int neighbourGiftDay, rivalContestDay, rivalResolvedDay, franchiseNumber;
+        public float rivalReputation = 50;
         public string challengeMode = "", challengeRule = "";
         public int challengeSeed;
         public List<ChallengeRecord> challengeRecords = new List<ChallengeRecord>();

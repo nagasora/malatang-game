@@ -220,9 +220,13 @@ namespace MalatangStory.Game
         {
             var o = Find(orderId);
             if (o == null || (o.stage != OrderStage.Drained && o.stage != OrderStage.Finishing)) return false;
+            if (!float.IsFinite(ml)) return false;
             if (!Customers.AvailableSoups.Any(x => x.Id == soupId)) return Fail("このスープはまだ作れません。");
             if (TutorialBlocks(Tutorial.Soup, "先に網じゃくを2回以上振って湯切りしましょう。")) return false;
             if (o.chosenSoup != soupId) { o.chosenSoup = soupId; o.soupMl = 0; }
+            float overflow = Math.Max(0, o.soupMl + Math.Max(0, ml) - 450) - Math.Max(0, o.soupMl - 450);
+            if (o.counterSpillMl == 0 && overflow > 0) Notify("あっ、少しこぼれちゃった。台のしみをタップして、ふきふきしよう。");
+            o.counterSpillMl = Math.Min(100, o.counterSpillMl + overflow);
             o.soupMl = Math.Max(0, Math.Min(600, o.soupMl + ml));
             o.stage = OrderStage.Finishing;
             Emit(SimEventKind.SoupPoured, o.id, (long)o.soupMl, soupId);
@@ -230,6 +234,13 @@ namespace MalatangStory.Game
             if (State.tutorialStep == Tutorial.Soup && soupId == o.soup && o.soupMl >= soup.IdealMinMl && o.soupMl <= soup.IdealMaxMl) TutorialAction(Tutorial.Soup);
             Changed?.Invoke();
             return true;
+        }
+
+        public bool WipeCounter(string orderId)
+        {
+            var order = Find(orderId);
+            if (order == null || order.counterSpillMl <= 0) return false;
+            order.counterSpillMl = 0; Notify("ふきふき。台がきれいになりました！"); Save(); return true;
         }
 
         /// <summary>v1 互換：スープを選ぶ（理想量の中央まで注ぐ）。</summary>
@@ -308,6 +319,7 @@ namespace MalatangStory.Game
             MorningMarket.ApplyBonus(o, Catalog);
             if (o.omakase) o.report.total = Math.Min(o.report.total, Omakase.QualityCap(o, Catalog));
             o.report.total = Math.Max(0, Math.Min(100, o.report.total + PreparationRules.Bonus(State, o.chosenSoup)));
+            o.bowlStyle = o.takeout ? "paper" : State.collectionBowl ? "jade" : State.theme;
             o.quality = o.report.total;
             o.expertBowl = !o.usedVisibleGauge && State.gaugeMode == 2 && !o.handledByStaff && o.quality >= 85;
             o.stage = OrderStage.Ready;
@@ -328,6 +340,7 @@ namespace MalatangStory.Game
             var o = Find(id);
             if (o == null || o.stage != OrderStage.Ready) return false;
             if (!o.takeout && o.seat < 0) return Fail(o.customerName + "の席が空いていません。テーブルを片付けましょう。");
+            if (o.delivery && !o.delivered) return DispatchDelivery(o);
             o.stage = OrderStage.Served;
             o.visualState = o.takeout ? "leave" : "eat";
             o.visualSeconds = 0;

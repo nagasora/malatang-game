@@ -76,7 +76,13 @@ namespace MalatangStory.Game
                 s.combo++;
                 r.bestCombo = Math.Max(r.bestCombo, s.combo);
                 s.stats.bestCombo = Math.Max(s.stats.bestCombo, s.combo);
-                if (s.combo % 5 == 0) sim.Emit(SimEventKind.Combo, o.id, s.combo, s.combo + "連続で大満足！チップ×" + ComboMultiplier(s.combo).ToString("0.00"));
+                if ((s.combo == 10 || s.combo == 25 || s.combo == 50 || s.combo == 100) && !s.comboMilestones.Contains(s.combo))
+                {
+                    s.comboMilestones.Add(s.combo); long bonus = s.combo * 10L;
+                    s.moneyFen += bonus; r.missionRewardsFen += bonus;
+                    sim.Emit(SimEventKind.Combo, o.id, s.combo, s.combo + "連続の節目！記念ボーナス " + RestaurantSimulation.Money(bonus));
+                }
+                else if (s.combo % 5 == 0) sim.Emit(SimEventKind.Combo, o.id, s.combo, s.combo + "連続で大満足！チップ×" + ComboMultiplier(s.combo).ToString("0.00"));
             }
             else if (satisfaction < ComboBreakThreshold) BreakCombo(sim);
 
@@ -94,6 +100,7 @@ namespace MalatangStory.Game
         public static void BreakCombo(RestaurantSimulation sim)
         {
             if (sim.State.combo >= 3) sim.Emit(SimEventKind.Combo, "", 0, sim.State.combo + "連続の記録が途切れました。");
+            if (sim.State.combo >= 3) { sim.State.lastBrokenCombo = sim.State.combo; sim.State.comboRecoveryUntil = sim.State.daySeconds + 30; }
             sim.State.combo = 0;
         }
     }

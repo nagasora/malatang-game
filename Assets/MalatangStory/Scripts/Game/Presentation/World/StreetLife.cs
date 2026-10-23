@@ -5,7 +5,7 @@ using UnityEngine.Rendering;
 namespace MalatangStory.Game
 {
     /// <summary>ナビメッシュを使わず、路地の歩行者・車・自転車を決定的なレーンで動かします。</summary>
-    public sealed class StreetLife : MonoBehaviour
+    public sealed partial class StreetLife : MonoBehaviour
     {
         /// <summary>歩行レーンと雨天用の傘を保持します。</summary>
         private sealed class Pedestrian
@@ -18,6 +18,7 @@ namespace MalatangStory.Game
             internal float Speed;
             internal float LaneZ;
             internal int Direction;
+            internal int Seed; internal string Kind; internal float NextLookTime, LookSeconds, HiddenUntil; internal Transform Dog;
         }
 
         /// <summary>車両の移動状態と出現間隔を保持します。</summary>
@@ -28,7 +29,7 @@ namespace MalatangStory.Game
             internal float LaneZ;
             internal int Direction;
             internal float Delay;
-            internal bool Bicycle;
+            internal bool Bicycle, BellRung;
         }
 
         private readonly List<Pedestrian> pedestrians = new List<Pedestrian>();
@@ -39,10 +40,13 @@ namespace MalatangStory.Game
         private const float HalfStreet = 48f;
         private bool rainy;
         private float night = -1;
+        private GameObject nightMarket;
         private Camera view;
         private float detailTimer;
         private float streetFront;
         private float crossingPhase;
+        private bool crossingOccupied;
+        private Transform deliveryScooter;
         private string fallingSeason;
         private ParticleSystem seasonalParticles;
         private string requestedSeason;
@@ -66,7 +70,7 @@ namespace MalatangStory.Game
                 float lane = front - (i % 3 == 0 ? 12.3f + i % 2 * .55f : 2.25f + i % 2 * .6f);
                 Transform person = new GameObject("Street Pedestrian " + i).transform;
                 person.SetParent(transform, false);
-                CharacterAppearance appearance = CharacterAppearance.FromSeed(seed + i * 137);
+                CharacterAppearance appearance = CharacterAppearance.ForArchetype(VisitorKind(i), seed + i * 137, i == 6);
                 CharacterRig rig = CharacterFactory.Create(appearance, "Passerby " + i, person);
                 Transform distant = BuildDistantPerson(person, rig, appearance);
                 distant.gameObject.SetActive(false);
@@ -78,7 +82,8 @@ namespace MalatangStory.Game
                     renderer.shadowCastingMode = ShadowCastingMode.Off;
                 GameObject umbrella = BuildUmbrella(person, i);
                 umbrella.SetActive(false);
-                pedestrians.Add(new Pedestrian { Rig = rig, Root = person, Umbrella = umbrella, Distant = distant, Phase = i * .8f, Speed = speed, LaneZ = lane, Direction = direction });
+                var pedestrian = new Pedestrian { Rig = rig, Root = person, Umbrella = umbrella, Distant = distant, Phase = i * .8f, Speed = speed, LaneZ = lane, Direction = direction };
+                ConfigureVisitor(pedestrian, i, seed); pedestrians.Add(pedestrian);
             }
             for (int i = 0; i < 5; i++)
             {
@@ -97,8 +102,24 @@ namespace MalatangStory.Game
             BuildBicycle(bicycle);
             bicycle.gameObject.SetActive(false);
             vehicles.Add(new Vehicle { Root = bicycle, Speed = 3.1f, Direction = 1, LaneZ = bicycle.localPosition.z, Delay = 8, Bicycle = true });
+            deliveryScooter = new GameObject("Delivery Scooter").transform;
+            deliveryScooter.SetParent(transform, false); BuildCar(deliveryScooter, 3);
+            deliveryScooter.gameObject.SetActive(false);
+            StoreBuilder.Part("Delivery Insulated Box", StoreBuilder.RoundedBox(new Vector3(.9f, .7f, .7f), .06f), MaterialLibrary.Lit(new Color(.7f, .12f, .08f), .3f), new Vector3(0, 1.2f, -.9f), Vector3.one, deliveryScooter, null, false);
+            BuildNightMarket(seed);
             SetNight(0);
             UpdateDetail();
+        }
+
+        public void SetDeliveryProgress(float progress)
+        {
+            if (deliveryScooter == null) return;
+            bool active = progress >= 0 && progress < 1;
+            deliveryScooter.gameObject.SetActive(active);
+            if (!active) return;
+            float x = progress < .8f ? Mathf.Lerp(1, 35, progress / .8f) : Mathf.Lerp(35, 1, (progress - .8f) / .2f);
+            deliveryScooter.localPosition = new Vector3(x, 0, streetFront - 4.8f);
+            deliveryScooter.localRotation = Quaternion.Euler(0, progress < .8f ? 90 : -90, 0);
         }
 
         /// <summary>雨では傘を表示して通行人を八人から五人へ減らし、自転車を止めます。</summary>
@@ -229,6 +250,7 @@ namespace MalatangStory.Game
             float value = float.IsNaN(night01) ? 0 : Mathf.Clamp01(night01);
             if (Mathf.Abs(value - night) < .001f) return;
             night = value;
+            if (nightMarket != null) nightMarket.SetActive(night > .4f);
             block ??= new MaterialPropertyBlock();
             foreach ((Renderer renderer, Color color) lamp in lamps)
             {
@@ -254,12 +276,14 @@ namespace MalatangStory.Game
             }
             crossingPhase = Mathf.Repeat(crossingPhase + delta, 36);
             float crossingZ = streetFront - 2.2f - Mathf.Clamp01((crossingPhase - 10) / 10) * 10.3f;
+            crossingOccupied = false;
             for (int personIndex = 0; personIndex < pedestrians.Count; personIndex++)
             {
                 Pedestrian person = pedestrians[personIndex];
-                if (!person.Root.gameObject.activeSelf) continue;
+                if (UpdateVisitor(person, personIndex, delta)) continue;
                 if (personIndex == 0 && crossingPhase >= 10 && crossingPhase < 20)
                 {
+                    crossingOccupied = true; person.Rig.SetPose(CharacterPose.Walk);
                     person.Root.localPosition = new Vector3(StreetVisualRules.CrosswalkX, 0, crossingZ);
                     person.Root.localRotation = Quaternion.Euler(0, 180, 0); person.Rig.SetMoveSpeed(person.Speed);
                     continue;
@@ -283,8 +307,10 @@ namespace MalatangStory.Game
                     if (vehicle.Delay == 0) vehicle.Root.gameObject.SetActive(true);
                     continue;
                 }
-                bool yield = crossingPhase >= 10 && crossingPhase < 20 && StreetVisualRules.YieldForCrossing(vehicle.Root.localPosition.x, vehicle.Direction, crossingZ, streetFront);
+                bool yield = crossingOccupied && StreetVisualRules.YieldForCrossing(vehicle.Root.localPosition.x, vehicle.Direction, crossingZ, streetFront);
                 float x = vehicle.Root.localPosition.x + vehicle.Direction * vehicle.Speed * (yield ? 0 : delta);
+                if (vehicle.Bicycle && x < -35) vehicle.BellRung = false;
+                if (vehicle.Bicycle && Mathf.Abs(x) < 6 && !vehicle.BellRung) { vehicle.BellRung = true; BicycleBell?.Invoke(); }
                 if (vehicle.Bicycle && x > HalfStreet)
                 {
                     vehicle.Root.gameObject.SetActive(false);

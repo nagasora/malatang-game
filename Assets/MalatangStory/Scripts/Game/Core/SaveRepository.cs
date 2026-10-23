@@ -231,6 +231,7 @@ namespace MalatangStory.Game
             }
             if (s.saveVersion <= 9)
             {
+                s.rivalReputation = 50;
                 if (s.staff != null) foreach (var member in s.staff.Where(x => x != null)) member.motivation = 70;
                 s.reducedMotion = false; s.snapCamera = false; s.leftHanded = false; s.gaugeMode = 0;
                 s.interactKey = "E"; s.buildRotateKey = "T";

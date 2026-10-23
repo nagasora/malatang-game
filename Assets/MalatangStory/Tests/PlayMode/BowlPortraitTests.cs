@@ -396,7 +396,7 @@ namespace MalatangStory.Tests
             Transform tabs = screen.Root.GetComponentsInChildren<Transform>(true).Single(value => value.name == "Tabs");
             string[] labels = tabs.GetComponentsInChildren<Button>().Select(button => button.name).ToArray();
 
-            CollectionAssert.AreEqual(new[] { "店の物語", "お客さん図鑑", "食材図鑑", "レシピ帳", "ミッション", "記録", "一杯アルバム", "希少食材" }, labels);
+            CollectionAssert.AreEqual(new[] { "店の物語", "お客さん図鑑", "食材図鑑", "レシピ帳", "ミッション", "記録", "一杯アルバム", "希少食材", "収集報酬" }, labels);
             RawImage portrait = screen.Root.GetComponentsInChildren<RawImage>().Single(value => value.name == "Bowl Portrait");
             Assert.AreSame(BowlPortrait.Get(entry), portrait.texture);
             Assert.IsFalse(portrait.raycastTarget);

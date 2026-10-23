@@ -8,6 +8,7 @@ namespace MalatangStory.Game
         {
             var member = State.staff.FirstOrDefault(x => x.id == id);
             if (member == null) return false;
+            if (rest && member.role == StaffRole.Courier && State.orders.Any(x => x.stage == OrderStage.Delivering)) return Fail("配達中のスクーターが戻るまで待ちましょう。");
             member.resting = rest;
             if (rest) { member.busySeconds = 0; member.task = ""; member.taskTarget = ""; }
             Save(); Changed?.Invoke(); return true;

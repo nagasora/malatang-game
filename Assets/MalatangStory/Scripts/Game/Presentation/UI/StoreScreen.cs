@@ -50,6 +50,7 @@ namespace MalatangStory.Game
             UIKit.Button(row, "経営", () => App.Open(GameScreen.Management), ButtonStyle.Secondary, 18, IconKind.Chart);
             buildButton = UIKit.Button(row, "内装", () => App.Open(GameScreen.Build), ButtonStyle.Secondary, 18, IconKind.Hammer);
             UIKit.Button(row, "図鑑", () => App.Open(GameScreen.Collection), ButtonStyle.Secondary, 18, IconKind.Book);
+            UIKit.Button(row, "写真", () => App.BeginPhoto(false), ButtonStyle.Secondary, 18, IconKind.Camera);
             UIKit.Button(row, "厨房", () => App.World.Visit(Station.Kitchen, () => App.Interact(Station.Kitchen)), ButtonStyle.Primary, 18, IconKind.Pot);
 
             crosshair = UIKit.Rect("Crosshair", root);

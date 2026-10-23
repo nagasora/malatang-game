@@ -15,12 +15,13 @@ namespace MalatangStory.Game
         {
             public CharacterRig Rig;
             public NavMeshAgent Agent;
-            public bool Seated, Leaving, Arrived, VisitedFridge, ReachedDoor;
+            public bool Seated, Leaving, Arrived, VisitedFridge, ReachedDoor, GreetedRegular;
             /// <summary>来店・退店で使う歩道の端（左右どちらから来たか）。</summary>
             public Vector3 Street;
             public GameObject Bowl;
             public MealBowlView Meal;
             public float EmoteCooldown;
+            public EatingStage LastEatingStage;
             public OrderStage LastStage = (OrderStage)(-1);
         }
 
@@ -92,6 +93,7 @@ namespace MalatangStory.Game
             int rows = DiningLayout.Rows(sim.State);
             foreach (var order in orders)
             {
+                if (order.delivery) continue;
                 bool done = order.stage == OrderStage.Cancelled || (order.stage == OrderStage.Served && order.visualState == "leave");
                 if (!customers.TryGetValue(order.id, out var actor))
                 {
@@ -126,7 +128,7 @@ namespace MalatangStory.Game
             float speed = order.archetype == "rider" ? 3.0f : order.archetype == "elder" ? 1.5f : order.archetype == "drunk" ? 1.6f : 2.1f + (order.appearanceSeed % 5) * .1f;
             Configure(agent, speed);
             if (NavMesh.SamplePosition(start, out var hit, 3f, NavMesh.AllAreas)) agent.Warp(hit.position);
-            var actor = new Actor { Rig = rig, Agent = agent, VisitedFridge = order.style != OrderStyle.SelfServe, Street = start, ReachedDoor = start == door };
+            var actor = new Actor { Rig = rig, Agent = agent, VisitedFridge = Sim.State.festivalStall || order.style != OrderStyle.SelfServe, Street = start, ReachedDoor = start == door };
             customers[order.id] = actor;
             return actor;
         }
@@ -201,6 +203,7 @@ namespace MalatangStory.Game
             bool leaving = order.stage == OrderStage.Cancelled || (order.stage == OrderStage.Served && order.visualState == "leave");
             if (leaving)
             {
+                rig.SetSpicyMeal(false);
                 if (!actor.Leaving)
                 {
                     actor.Leaving = true;
@@ -209,9 +212,12 @@ namespace MalatangStory.Game
                     {
                         rig.SetPose(CharacterPose.Wave);
                         rig.ShowEmote(order.tipFen > 0 ? EmoteKind.Coin : EmoteKind.Heart, 2f);
+                        if (!string.IsNullOrEmpty(order.regularId)) world.Speak(order.id, Sim.State.storeName + "の大将、また来るね！", false, 2.5f);
                     }
                 }
                 Stand(actor);
+                if (order.takeout && order.stage == OrderStage.Served && actor.Bowl == null)
+                { actor.Bowl = world.Kitchen.CreateServedBowl(order, rig.transform.position); rig.SetCarry(actor.Bowl.transform); }
                 if (order.stage == OrderStage.Served && order.visualSeconds < 1.5f) rig.SetPose(CharacterPose.Wave);
                 Vector3 exit = StoreLayout.Door(rows) + Vector3.back * .8f;
                 if (!actor.ReachedDoor && Reached(actor, exit, .9f)) actor.ReachedDoor = true;
@@ -219,6 +225,14 @@ namespace MalatangStory.Game
                 Vector3 away = actor.ReachedDoor && actor.Street != Vector3.zero ? actor.Street : exit;
                 MoveTo(actor, away);
                 if (Reached(actor, away, .9f) || order.visualSeconds > 18) Remove(order.id);
+                return;
+            }
+            if (Sim.State.festivalStall)
+            {
+                actor.ReachedDoor = true;
+                int place = Mathf.Max(0, queue.IndexOf(order));
+                MoveTo(actor, new Vector3(.5f + place * .6f, 0, StoreLayout.FrontZ(rows) - 2.2f));
+                rig.LookAt(new Vector3(3, 1.4f, StoreLayout.FrontZ(rows) - 2.2f));
                 return;
             }
             if (!actor.ReachedDoor)
@@ -239,7 +253,7 @@ namespace MalatangStory.Game
                     }
                     rig.SetPose(CharacterPose.Idle);
                     int index = queue.IndexOf(order);
-                    var spot = StoreLayout.QueueSpot(Mathf.Max(0, index));
+                    var spot = StoreLayout.QueueSpot(Mathf.Max(0, index), rows);
                     MoveTo(actor, spot);
                     if (Reached(actor, spot)) rig.LookAt(StoreLayout.RegisterTop);
                     break;
@@ -262,7 +276,12 @@ namespace MalatangStory.Game
                     {
                         if (!Reached(actor, eatSeat.Position, .45f)) { MoveTo(actor, eatSeat.Position); break; }
                         Sit(actor, eatSeat);
-                        rig.SetPose(CharacterPose.Eat);
+                        rig.SetPose(order.eatSeconds < 1.2f ? (order.archetype == "influencer" ? CharacterPose.Think : CharacterPose.Pray) : CharacterPose.Eat);
+                        rig.SetSpicyMeal(order.chosenSpice > order.spice || order.chosenSpice >= 5 && order.archetype != "spicy");
+                        EatingStage eatingStage = CookingFeel.MealStage(order.eatSeconds);
+                        if (eatingStage != actor.LastEatingStage && (eatingStage == EatingStage.Lift || eatingStage == EatingStage.Sip))
+                            world.App.Audio.PlayPitched(Sfx.Slurp, CustomerVoice.VoicePitch(order), .07f);
+                        actor.LastEatingStage = eatingStage;
                         if (actor.Bowl == null)
                         {
                             actor.Bowl = world.Kitchen.CreateServedBowl(order, BowlSpot(eatSeat, order.seat));
@@ -289,11 +308,36 @@ namespace MalatangStory.Game
                     }
                     break;
             }
+            if (actor.Seated && !actor.GreetedRegular && !string.IsNullOrEmpty(order.regularId))
+            {
+                foreach (var other in Sim.State.orders)
+                    if (other.id != order.id && !string.IsNullOrEmpty(other.regularId) && customers.TryGetValue(other.id, out var neighbour) && neighbour.Seated)
+                    { world.Speak(order.id, other.customerName + "さん、今日も会えましたね。", false, 2.5f); rig.SetPose(CharacterPose.Wave); actor.GreetedRegular = true; break; }
+            }
+            if (actor.Seated && !string.IsNullOrEmpty(order.groupId) && actor.EmoteCooldown <= 0)
+            {
+                int index = 0, count = 0; CustomerOrder partner = null;
+                foreach (var other in Sim.State.orders)
+                    if (other.groupId == order.groupId) { if (other.id == order.id) index = count; else partner = other; count++; }
+                if (count > 1 && (int)(Time.time / 5) % count == index)
+                {
+                    world.Speak(order.id, index % 2 == 0 ? "これ、おいしいね！" : "また一緒に来ようね。", false, 2);
+                    Vector3? point = partner != null ? CustomerPosition(partner.id) : null;
+                    if (point.HasValue) rig.LookAt(point.Value);
+                    actor.EmoteCooldown = count * 5;
+                }
+            }
             float patience = order.paidFen == 0 ? order.elapsed / Mathf.Max(1, order.patience) : order.elapsed / Mathf.Max(1, order.patience * 2);
             if (order.stage != OrderStage.Served)
             {
                 var mood = patience < .3f ? CharacterMood.Happy : patience < .6f ? CharacterMood.Neutral : patience < .85f ? CharacterMood.Impatient : CharacterMood.Angry;
                 if (rig.Mood != mood) { rig.Mood = mood; if (mood == CharacterMood.Impatient && actor.EmoteCooldown <= 0) { rig.ShowEmote(EmoteKind.Sweat, 2f); actor.EmoteCooldown = 8; } }
+                if ((order.stage == OrderStage.Waiting || order.AwaitsBowl) && actor.Agent.velocity.sqrMagnitude < .01f)
+                {
+                    if (patience >= .6f) rig.SetPose(CharacterPose.WaitSigh);
+                    else if (patience >= .3f) rig.SetPose(CharacterPose.WaitFidget);
+                    if (patience >= .6f && actor.EmoteCooldown <= 0) { rig.ShowEmote(EmoteKind.Steam, 2); actor.EmoteCooldown = 8; }
+                }
                 if (stageChanged && order.stage == OrderStage.Waiting && actor.EmoteCooldown <= 0) { rig.ShowEmote(order.archetype == "critic" ? EmoteKind.Exclamation : EmoteKind.Question, 2f); actor.EmoteCooldown = 4; }
                 if (stageChanged && (order.stage == OrderStage.Weighed || (order.stage == OrderStage.Selecting && order.paidFen > 0))) rig.ShowEmote(EmoteKind.Coin, 1.5f);
             }
@@ -327,7 +371,7 @@ namespace MalatangStory.Game
             }
         }
 
-        private static Vector3 Home(StaffRole role) => role == StaffRole.Cashier ? StoreLayout.RegisterStaff + Vector3.left * .6f : role == StaffRole.Server ? StoreLayout.PassStaff + Vector3.right * .6f : StoreLayout.CookStaff;
+        private Vector3 Home(StaffRole role) => role == StaffRole.Courier ? StoreLayout.Door(DiningLayout.Rows(Sim.State)) + new Vector3(2, 0, 1) : role == StaffRole.Cashier ? StoreLayout.RegisterStaff + Vector3.left * .6f : role == StaffRole.Server ? StoreLayout.PassStaff + Vector3.right * .6f : StoreLayout.CookStaff;
 
         private void UpdateStaff(float deltaTime, bool paused)
         {

@@ -44,7 +44,7 @@ namespace MalatangStory.Game
     }
 
     /// <summary>スタッフの役割。</summary>
-    public enum StaffRole { Cashier, Server, Cook }
+    public enum StaffRole { Cashier, Server, Cook, Courier }
 
     /// <summary>雇用できるスタッフの定義。</summary>
     public sealed class StaffDefinition
@@ -214,6 +214,7 @@ namespace MalatangStory.Game
             new StaffDefinition { Role = StaffRole.Server, Title = "ホール係", Description = "完成した麻辣湯を運び、空いた席を片付けます。", DailyWageFen = 9000, HireFeeFen = 20000, UnlockLevel = 3, BaseTaskSeconds = 6 },
             new StaffDefinition { Role = StaffRole.Cashier, Title = "レジ係", Description = "注文を受け、具材を取り、計量と会計を行います。", DailyWageFen = 9000, HireFeeFen = 25000, UnlockLevel = 4, BaseTaskSeconds = 8 },
             new StaffDefinition { Role = StaffRole.Cook, Title = "調理補助", Description = "空いた鍋で茹で、湯切りと仕上げを行います。", DailyWageFen = 12000, HireFeeFen = 40000, UnlockLevel = 6, BaseTaskSeconds = 5 },
+            new StaffDefinition { Role = StaffRole.Courier, Title = "配達係", Description = "完成した出前をスクーターで届けます。45秒以内なら温かいまま。", DailyWageFen = 10000, HireFeeFen = 30000, UnlockLevel = 5, BaseTaskSeconds = 4 },
         };
 
         public static readonly EquipmentDefinition[] Equipment =

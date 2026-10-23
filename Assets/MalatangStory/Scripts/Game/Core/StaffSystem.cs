@@ -10,6 +10,7 @@ namespace MalatangStory.Game
     public sealed class StaffSystem
     {
         private readonly RestaurantSimulation sim;
+        private float chatterSeconds;
         public StaffSystem(RestaurantSimulation simulation) { sim = simulation; }
 
         private GameState S => sim.State;
@@ -22,6 +23,18 @@ namespace MalatangStory.Game
 
         public void Tick(float seconds)
         {
+            chatterSeconds += seconds;
+            if (chatterSeconds >= 90)
+            {
+                chatterSeconds %= 90;
+                var speaker = S.staff.FirstOrDefault(x => x.personality == 2 && !x.resting && x.busySeconds <= 0);
+                var listener = speaker == null ? null : S.staff.FirstOrDefault(x => x != speaker && !x.resting && x.busySeconds <= 0);
+                if (listener != null)
+                {
+                    speaker.motivation = Math.Min(100, speaker.motivation + 2); listener.motivation = Math.Min(100, listener.motivation + 2);
+                    sim.Emit(SimEventKind.StaffAction, speaker.id, 1, speaker.name + "「" + listener.name + "さん、ひと息つきましょう」");
+                }
+            }
             foreach (var member in S.staff)
             {
                 if (member.resting)
@@ -46,9 +59,14 @@ namespace MalatangStory.Game
             switch (member.role)
             {
                 case StaffRole.Server:
-                    var ready = S.orders.FirstOrDefault(o => o.stage == OrderStage.Ready && Available(o) && (o.takeout || o.seat >= 0));
+                    var ready = S.orders.FirstOrDefault(o => o.stage == OrderStage.Ready && !o.delivery && Available(o) && (o.takeout || o.seat >= 0));
                     if (ready != null) { task = "serve"; target = ready.id; }
                     else if (S.dirtyTables.Count > 0 && !S.staff.Any(x => x != member && x.task == "clean")) { task = "clean"; target = S.dirtyTables[0].ToString(); }
+                    break;
+                case StaffRole.Courier:
+                    if (S.orders.Count(o => o.stage == OrderStage.Delivering) >= S.staff.Count(x => x.role == StaffRole.Courier && !x.resting)) break;
+                    var delivery = S.orders.FirstOrDefault(o => o.stage == OrderStage.Ready && o.delivery && Available(o));
+                    if (delivery != null) { task = "serve"; target = delivery.id; }
                     break;
                 case StaffRole.Cashier:
                     var waiting = S.orders.FirstOrDefault(o => o.IsAtRegister && Available(o));

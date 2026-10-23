@@ -24,31 +24,32 @@ namespace MalatangStory.Game
             bool tutorial = !S.tutorialComplete;
             var body = UIKit.Card(root, Seasons.Of(S.day).Name + "・" + S.day + "日目の朝", new Vector2(760, 600), IconKind.Calendar, () => App.Open(GameScreen.Store));
             body.parent.gameObject.AddComponent<PopIn>();
+            body.parent.GetComponent<Image>().color = new Color(.13f, .23f, .2f);
             var weather = Content.Weather(S.weather);
             var dailyEvent = Content.DailyEvent(S.dailyEvent);
             var wIcon = UIKit.Icon(body, HudView.WeatherIcon(S.weather), UIKit.Gold);
             UIKit.Place(wIcon.rectTransform, new Vector2(0, 1), new Vector2(0, 0), new Vector2(64, 64));
             var season = Seasons.Of(S.day);
             string featured = string.IsNullOrEmpty(S.featuredIngredient) ? "" : "　旬：" + App.Catalog.Get(S.featuredIngredient).displayName + "（仕入れ25%引き・よく頼まれる）";
-            var wText = UIKit.Label(body, "天気：" + weather.Name + "　" + WeatherNote(weather) + "\n" + season.Name + "（" + Seasons.DayOfSeason(S.day) + "日目）" + featured + "", 19, UIKit.Ink, TextAnchor.MiddleLeft, true);
+            var wText = UIKit.Label(body, "天気：" + weather.Name + "　" + WeatherNote(weather) + "\n" + season.Name + "（" + Seasons.DayOfSeason(S.day) + "日目）" + featured + "", 19, UIKit.Paper, TextAnchor.MiddleLeft, true);
             UIKit.Place(wText.rectTransform, new Vector2(0, 1), new Vector2(76, -4), new Vector2(630, 56));
-            var eventPanel = UIKit.Panel(body, dailyEvent.Id == "none" ? UIKit.PaperDark : new Color(1, .9f, .7f), 14, false, "Event");
+            var eventPanel = UIKit.Panel(body, new Color(.19f, .31f, .26f), 14, false, "Event");
             UIKit.Place(eventPanel.rectTransform, new Vector2(0, 1), new Vector2(0, -76), new Vector2(716, 92));
-            var eTitle = UIKit.Label(eventPanel.transform, "本日：" + dailyEvent.Name, 21, UIKit.Lacquer, TextAnchor.MiddleLeft, true);
+            var eTitle = UIKit.Label(eventPanel.transform, "本日：" + dailyEvent.Name, 21, UIKit.Gold, TextAnchor.MiddleLeft, true);
             UIKit.Place(eTitle.rectTransform, new Vector2(0, 1), new Vector2(16, -6), new Vector2(680, 34));
-            var eText = UIKit.Label(eventPanel.transform, tutorial ? "今日は練習営業です。お客さんは1人だけ。案内に従って麻辣湯を作ってみましょう。" : dailyEvent.Description, 16, UIKit.InkSoft, TextAnchor.UpperLeft);
+            var eText = UIKit.Label(eventPanel.transform, tutorial ? "今日は練習営業です。お客さんは1人だけ。案内に従って麻辣湯を作ってみましょう。" : dailyEvent.Description, 16, UIKit.PaperDark, TextAnchor.UpperLeft);
             UIKit.Place(eText.rectTransform, new Vector2(0, 1), new Vector2(16, -42), new Vector2(680, 46));
             var market = MorningMarket.Current(Sim);
-            marketNote = UIKit.Label(body, market == null ? "朝市：3日目から希少食材が日替わりで届きます" : "朝市：" + market.displayName + "　限定5個・品質+3（朝のみ）", 16, UIKit.Lacquer, TextAnchor.MiddleLeft, true);
+            marketNote = UIKit.Label(body, market == null ? "朝市：3日目から希少食材が日替わりで届きます" : "朝市：" + market.displayName + "　限定5個・品質+3（朝のみ）", 16, UIKit.Gold, TextAnchor.MiddleLeft, true);
             UIKit.Place(marketNote.rectTransform, new Vector2(0, 1), new Vector2(0, -172), new Vector2(716, 30));
-            var stats = UIKit.Label(body, tutorial ? "" : "来客見込み " + Sim.Demand + "人　客席 " + DiningLayout.SeatCount(S) + "席　スタッフ " + S.staff.Count + "人\n固定費・人件費 " + RestaurantSimulation.Money(Sim.FixedCostFen + S.staff.Sum(x => Content.StaffFor(x.role).DailyWageFen)) + "／日", 18, UIKit.Ink, TextAnchor.UpperLeft);
+            var stats = UIKit.Label(body, tutorial ? "" : "来客見込み " + Sim.Demand + "人　客席 " + DiningLayout.SeatCount(S) + "席　スタッフ " + S.staff.Count + "人\n固定費・人件費 " + RestaurantSimulation.Money(Sim.FixedCostFen + S.staff.Sum(x => Content.StaffFor(x.role).DailyWageFen)) + "／日", 18, UIKit.Paper, TextAnchor.UpperLeft);
             UIKit.Place(stats.rectTransform, new Vector2(0, 1), new Vector2(0, -204), new Vector2(716, 50));
             int stars = Progression.Stars(S);
             string missions = S.missions.Count == 0 ? "" : "今日のミッション：" + string.Join("／", S.missions.Select(Missions.Describe));
-            var goals = UIKit.Label(body, tutorial ? "" : "格付け " + new string('★', stars) + new string('☆', 5 - stars) + " " + Content.Rank(stars).Title + ChapterNote() + "\n" + missions, 16, UIKit.Jade, TextAnchor.UpperLeft);
+            var goals = UIKit.Label(body, tutorial ? "" : "格付け " + new string('★', stars) + new string('☆', 5 - stars) + " " + Content.Rank(stars).Title + ChapterNote() + "\n" + missions, 16, UIKit.PaperDark, TextAnchor.UpperLeft);
             goals.horizontalOverflow = HorizontalWrapMode.Wrap;
             UIKit.Place(goals.rectTransform, new Vector2(0, 1), new Vector2(0, -256), new Vector2(716, 62));
-            warnings = UIKit.Label(body, "", 16, UIKit.Bad, TextAnchor.UpperLeft);
+            warnings = UIKit.Label(body, "", 16, new Color(1, .62f, .4f), TextAnchor.UpperLeft);
             UIKit.Place(warnings.rectTransform, new Vector2(0, 1), new Vector2(0, -320), new Vector2(716, 52));
 
             var row = UIKit.Rect("Buttons", body);
@@ -58,11 +59,12 @@ namespace MalatangStory.Game
             layout.spacing = 8; layout.childControlWidth = true; layout.childControlHeight = true; layout.childForceExpandWidth = true;
             UIKit.Button(row, "朝市", () => { ShopScreen.StartAtMarket = true; App.Open(GameScreen.Shop); }, ButtonStyle.Gold, 18, IconKind.Cart, market != null);
             UIKit.Button(row, "仕入れ", () => App.Open(GameScreen.Shop), ButtonStyle.Secondary, 18, IconKind.Cart);
+            UIKit.Button(row, "商店街", () => App.Open(GameScreen.Neighbourhood), ButtonStyle.Secondary, 18, IconKind.Heart, !tutorial);
             UIKit.Button(row, "仕込み", () => App.Open(GameScreen.Preparation), ButtonStyle.Gold, 18, IconKind.Pot, !tutorial);
             UIKit.Button(row, "経営", () => App.Open(GameScreen.Management), ButtonStyle.Secondary, 18, IconKind.Chart, !tutorial);
             UIKit.Button(row, "内装", () => App.Open(GameScreen.Build), ButtonStyle.Secondary, 18, IconKind.Hammer, !tutorial);
             UIKit.Button(row, "着せ替え", () => App.Open(GameScreen.Wardrobe), ButtonStyle.Secondary, 18, IconKind.Person);
-            var open = UIKit.Button(body, tutorial ? "練習営業を始める" : "営業開始！", () => { if (Sim.BeginDay()) App.Open(GameScreen.Store); }, ButtonStyle.Primary, 24, IconKind.Play);
+            var open = UIKit.Button(body, tutorial ? "練習営業を始める" : "営業開始！", () => { if (Sim.BeginDay()) App.Open(S.festivalStall ? GameScreen.Stall : GameScreen.Store); }, ButtonStyle.Primary, 24, IconKind.Play);
             var ort = open.GetComponent<RectTransform>();
             ort.anchorMin = new Vector2(0, 0); ort.anchorMax = new Vector2(1, 0); ort.pivot = new Vector2(.5f, 0); ort.offsetMin = Vector2.zero; ort.offsetMax = new Vector2(0, 62);
         }
@@ -129,6 +131,7 @@ namespace MalatangStory.Game
                 "評判 " + (r.reputationDelta >= 0 ? "+" : "") + r.reputationDelta + "　経験値 +" + r.experience + "　所持金 " + RestaurantSimulation.Money(S.moneyFen),
             };
             revenueSuffix = r.discountsFen > 0 ? "（値引き -" + RestaurantSimulation.Money(r.discountsFen) + "）" : "";
+            UIKit.LedgerLines(body, 19, 454);
             numbers = UIKit.Label(body, "", 19, UIKit.Ink, TextAnchor.UpperLeft);
             numbers.rectTransform.anchorMin = new Vector2(0, 0); numbers.rectTransform.anchorMax = new Vector2(.47f, 1);
             numbers.rectTransform.offsetMin = new Vector2(0, 80); numbers.rectTransform.offsetMax = new Vector2(-10, 0);
@@ -178,6 +181,7 @@ namespace MalatangStory.Game
             UIKit.Place(badge.rectTransform, new Vector2(0, 1), Vector2.zero, new Vector2(84, 84));
             var letter = UIKit.Label(badge.rectTransform, grade, 54, UIKit.Paper, TextAnchor.MiddleCenter, true);
             UIKit.Fill(letter.rectTransform);
+            badge.rectTransform.localRotation = Quaternion.Euler(0, 0, -7);
             badge.gameObject.AddComponent<PopIn>();
             string comment = grade == "S" ? "最高の一日！お客さんみんなが笑顔で帰りました。"
                 : grade == "A" ? "とてもいい営業でした。" : grade == "B" ? "まずまずの一日。もうひと工夫できそう。"

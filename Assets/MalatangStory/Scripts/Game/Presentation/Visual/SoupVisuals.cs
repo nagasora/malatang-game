@@ -6,7 +6,7 @@ using UnityEngine;
 namespace MalatangStory.Game
 {
     /// <summary>有限個の共有テクスチャと、器ごとに所有する結合薬味メッシュを提供します。</summary>
-    public static class SoupVisuals
+    public static partial class SoupVisuals
     {
         private const int TextureSize = 256;
         private static readonly Dictionary<string, Texture2D> Textures = new Dictionary<string, Texture2D>(StringComparer.Ordinal);

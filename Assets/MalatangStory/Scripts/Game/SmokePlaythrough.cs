@@ -330,6 +330,83 @@ namespace MalatangStory.Game
             if (after == null || after.day != before.day || after.moneyFen != before.moneyFen || after.stats.served != before.stats.served || after.challengeRecords.Count != before.challengeRecords.Count + 1)
                 throw new Exception("Smoke: challenge changed campaign progress or failed to record");
             App.Open(GameScreen.Challenges); yield return Capture("32d-personal-best");
+            yield return CaptureBusinessAndPhoto();
+        }
+
+        private IEnumerator CaptureBusinessAndPhoto()
+        {
+            App.Continue();
+            App.SuspendSaving = true;
+            try
+            {
+                var sim = App.Simulation; var state = sim.State;
+                state.day = 10; state.dailyEvent = "festival"; state.phase = DayPhase.Preparation;
+                state.moneyFen = 4000000; state.shopLevel = 8;
+                App.Open(GameScreen.Neighbourhood); yield return Capture("33-neighbourhood");
+                if (!sim.SetFestivalStall(true) || !sim.BeginDay()) throw new Exception("Smoke: festival stall failed");
+                App.Open(GameScreen.Stall); yield return Capture("33b-festival-stall"); yield return CaptureLayouts("33b-festival-stall");
+                for (int i = 0; i < 65; i++)
+                {
+                    sim.Tick(1); foreach (var order in sim.Active.ToArray()) AutoCook(sim, order);
+                    if (i % 10 == 0) yield return null;
+                }
+                yield return Capture("33c-stall-service");
+                state.phase = DayPhase.Preparation; state.orders.Clear(); state.festivalStall = false;
+                if (!sim.HireStaff(StaffRole.Courier) || !sim.SetDeliveryEnabled(true)) throw new Exception("Smoke: courier failed");
+                var delivery = new CustomerOrder { id = "smoke-delivery", customerName = "出前・試食さん", type = "会社員", delivery = true, takeout = true, stage = OrderStage.Ready, chosenSoup = "mala", soupMl = 340, quality = 94, paidFen = 3000, bowlStyle = "paper",
+                    selected = new System.Collections.Generic.List<string> { "enoki", "bok_choy", "beef_slice" } };
+                delivery.report.total = 94; state.orders.Add(delivery); state.phase = DayPhase.Open;
+                if (!sim.Serve(delivery.id)) throw new Exception("Smoke: dispatch failed");
+                sim.Tick(8); App.Open(GameScreen.Store); yield return Capture("34-delivery");
+                var scooter = GameObject.Find("Delivery Scooter");
+                if (scooter == null) throw new Exception("Smoke: missing visible delivery scooter");
+                yield return CaptureObject("34b-delivery-scooter", scooter.transform, new Vector3(2, 1.4f, -3));
+                state.phase = DayPhase.Preparation; state.orders.Clear();
+                if (!sim.ScheduleRivalCookoff() || !sim.BeginDay()) throw new Exception("Smoke: rival cookoff failed");
+                for (int guard = 0; state.phase != DayPhase.Report && guard < 1800; guard++)
+                {
+                    sim.Tick(1); foreach (int table in state.dirtyTables.ToArray()) sim.ClearTable(table);
+                    foreach (var order in sim.Active.ToArray()) AutoCook(sim, order);
+                    if (guard % 30 == 0) yield return null;
+                }
+                if (state.phase != DayPhase.Report || state.rivalResolvedDay != state.day) throw new Exception("Smoke: rival result failed");
+                App.Open(GameScreen.Report); yield return new WaitForSeconds(1.5f); yield return Capture("35-rival-result");
+                state.ingredients.unlockedIds = App.Catalog.ingredients.Where(x => !x.isRare).Select(x => x.id).ToList();
+                state.ingredients.rareObtainedIds = App.Catalog.ingredients.Where(x => x.isRare).Select(x => x.id).ToList();
+                foreach (string reward in new[] { "apron", "bowl", "pennant", "title" }) sim.ChooseCollectionReward(reward, true);
+                App.World.PreviewChef(state.chef); App.World.SetCollectorPennant(true);
+                CollectionScreen.StartTab = 8; App.Open(GameScreen.Collection); yield return Capture("36-collection-rewards"); yield return CaptureLayouts("36-collection-rewards");
+                CollectionScreen.StartTab = 0;
+                var photoOrder = new CustomerOrder { id = "smoke-photo", customerName = "撮影用の一杯", type = "会社員", stage = OrderStage.Ready, chosenSoup = "mala", soupMl = 340, quality = 96, bowlStyle = "jade",
+                    selected = new System.Collections.Generic.List<string> { "enoki", "bok_choy", "beef_slice", "rice_noodle" } };
+                photoOrder.report.total = 96; state.orders.Add(photoOrder); App.SelectedOrderId = photoOrder.id;
+                App.Open(GameScreen.Cooking); yield return Capture("36b-reward-bowl");
+                App.BeginPhoto(true); yield return new WaitForSeconds(.6f); yield return Capture("37-photo-mode");
+                PhotoExportService.OutputDirectoryOverride = Path.Combine(Output, "Photos");
+                FindObjectsByType<Button>(FindObjectsSortMode.None).First(x => x.gameObject.activeInHierarchy && x.GetComponentInChildren<Text>()?.text == "スタンプ切替").onClick.Invoke();
+                FindObjectsByType<Button>(FindObjectsSortMode.None).First(x => x.gameObject.activeInHierarchy && x.GetComponentInChildren<Text>()?.text == "フィルター：なし").onClick.Invoke();
+                FindObjectsByType<Button>(FindObjectsSortMode.None).First(x => x.gameObject.activeInHierarchy && x.GetComponentInChildren<Text>()?.text == "PNGに保存").onClick.Invoke();
+                for (int guard = 0; (!Directory.Exists(PhotoExportService.OutputDirectoryOverride) || Directory.GetFiles(PhotoExportService.OutputDirectoryOverride, "*.png").Length == 0) && guard < 120; guard++) yield return null;
+                if (!Directory.Exists(PhotoExportService.OutputDirectoryOverride) || Directory.GetFiles(PhotoExportService.OutputDirectoryOverride, "*.png").Length == 0) throw new Exception("Smoke: photo export failed");
+                yield return Capture("37b-photo-saved");
+                File.WriteAllText(Path.Combine(Output, "business-proof.json"), "{\"festival\":true,\"delivery\":true,\"rivalResolved\":true,\"photoPng\":true,\"iosNativeVerified\":false}");
+            }
+            finally
+            {
+                PhotoExportService.OutputDirectoryOverride = null; App.SuspendSaving = false; App.Continue();
+            }
+        }
+        private IEnumerator CaptureObject(string name, Transform target, Vector3 offset)
+        {
+            var cameraObject = new GameObject("Verification Camera"); var camera = cameraObject.AddComponent<Camera>();
+            var canvas = App.UI.GetComponentInChildren<Canvas>(); bool visible = canvas.enabled;
+            try
+            {
+                camera.depth = 100; camera.fieldOfView = 34; camera.nearClipPlane = .03f;
+                camera.transform.position = target.position + offset; camera.transform.LookAt(target.position + Vector3.up * .7f);
+                canvas.enabled = false; yield return null; yield return Capture(name);
+            }
+            finally { canvas.enabled = visible; Destroy(cameraObject); }
         }
 
         /// <summary>実際の客席に専用カメラを向け、食事中または片付け前の器を撮影します。</summary>

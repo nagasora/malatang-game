@@ -27,7 +27,10 @@ namespace MalatangStory.Game
         /// <summary>怒った姿勢を取る。</summary>
         Angry,
         /// <summary>口元に手を添えて考える。</summary>
-        Think
+        Think,
+        WaitFidget,
+        WaitSigh,
+        Pray
     }
 
     /// <summary>目、眉、口に反映する気分。</summary>
@@ -73,7 +76,7 @@ namespace MalatangStory.Game
     }
 
     /// <summary>関節と表情を毎フレーム補間し、外部アセットなしでキャラクターを動かす。</summary>
-    public sealed class CharacterRig : MonoBehaviour
+    public sealed partial class CharacterRig : MonoBehaviour
     {
         private const int IconSize = 64;
         private static readonly Dictionary<EmoteKind, Material> EmoteMaterials = new Dictionary<EmoteKind, Material>();
@@ -155,6 +158,8 @@ namespace MalatangStory.Game
 
         /// <summary>両手の前に置かれた、小物を取り付けるためのアンカー。</summary>
         private float mealSeconds;
+        private bool spicyMeal;
+        public void SetSpicyMeal(bool value) => spicyMeal = value;
         /// <summary>器と同じ食事秒を使い、一口と頭・腕の動きを同期します。</summary>
         public void SetMealTime(float seconds) => mealSeconds = seconds;
 
@@ -163,7 +168,7 @@ namespace MalatangStory.Game
         /// <summary>現在の姿勢から指定した姿勢へ滑らかに切り替える。</summary>
         public void SetPose(CharacterPose pose)
         {
-            this.pose = pose >= CharacterPose.Idle && pose <= CharacterPose.Think ? pose : CharacterPose.Idle;
+            this.pose = pose >= CharacterPose.Idle && pose <= CharacterPose.Pray ? pose : CharacterPose.Idle;
             UpdateAppearanceItems();
         }
 
@@ -243,6 +248,7 @@ namespace MalatangStory.Game
             visual = newVisual;
             body = newBody;
             head = newHead;
+            ResetMealUtensils();
             leftShoulder = newLeftShoulder;
             rightShoulder = newRightShoulder;
             leftHip = newLeftHip;
@@ -332,7 +338,7 @@ namespace MalatangStory.Game
         /// <summary>姿勢ごとの関節角度と腰の高さを計算して補間する。</summary>
         private void AnimatePose(float blend, float normalizedSpeed)
         {
-            bool sitting = pose == CharacterPose.Sit || pose == CharacterPose.Eat;
+            bool sitting = pose == CharacterPose.Sit || pose == CharacterPose.Eat || pose == CharacterPose.Pray;
             bool walking = !sitting && (speed > 0f || pose == CharacterPose.Walk);
             float stride = Mathf.Sin(cycle) * Mathf.Lerp(16f, 34f, Mathf.Clamp01(normalizedSpeed));
             Vector3 leftArm = new Vector3(0f, 0f, -7f);
@@ -373,6 +379,12 @@ namespace MalatangStory.Game
                     leftArm.x = -55f;
                     bodyTilt += 4f;
                     break;
+                case CharacterPose.Pray:
+                    leftArm = new Vector3(-90, 0, -30); rightArm = new Vector3(-90, 0, 30); bodyTilt += 8; break;
+                case CharacterPose.WaitFidget:
+                    leftArm = new Vector3(-45, 0, -40); rightArm = new Vector3(-75, 0, 45); rightLeg.x = Mathf.Sin(clock * 8) * 2; break;
+                case CharacterPose.WaitSigh:
+                    leftArm.x = -12; rightArm.x = -12; bodyTilt += 4 + Mathf.Sin(clock * 2) * 2; break;
                 case CharacterPose.Cook:
                     leftArm = new Vector3(-65f + gesture * 20f, -15f, -15f);
                     rightArm = new Vector3(-75f - gesture * 25f, 15f, 15f);
@@ -421,6 +433,7 @@ namespace MalatangStory.Game
             RotateJoint(body, new Vector3(bodyTilt, 0f, MotionLean), blend);
             RotateJoint(leftShoulder, leftArm, blend);
             RotateJoint(rightShoulder, rightArm, blend);
+            UpdateMealUtensils(blend);
             RotateJoint(leftHip, leftLeg, blend);
             RotateJoint(rightHip, rightLeg, blend);
             RotateJoint(leftKnee, new Vector3(kneeAngle, 0f, 0f), blend);
@@ -475,7 +488,7 @@ namespace MalatangStory.Game
         /// <summary>頬の赤みを共有材質を複製せず更新し、待ちくたびれた時だけ汗粒を揺らす。</summary>
         private void AnimateFaceDetails(bool angry, float blend)
         {
-            float target = angry ? 1f : 0f;
+            float target = angry || spicyMeal ? 1f : 0f;
             float tint = angerTint < 0f ? target : Mathf.Lerp(angerTint, target, blend);
             if (cheekRenderer != null && Mathf.Abs(tint - angerTint) > 0.001f)
             {
@@ -487,7 +500,7 @@ namespace MalatangStory.Game
             }
             if (faceSweat != null)
             {
-                bool visible = mood == CharacterMood.Impatient && !faceMasked;
+                bool visible = (mood == CharacterMood.Impatient || spicyMeal) && !faceMasked;
                 SetVisible(faceSweat, visible);
                 if (visible)
                     faceSweat.localPosition = new Vector3(0.24f, 0.075f - Mathf.Repeat(clock * 0.025f, 0.04f), 0.158f);
@@ -532,6 +545,7 @@ namespace MalatangStory.Game
                 rotation.x += bitePhase < 1.3f ? Mathf.Sin(bitePhase / 1.3f * Mathf.PI) * 12f : 0f;
             }
             if (pose == CharacterPose.Think) rotation.z = 10f;
+            if (pose == CharacterPose.WaitSigh) rotation.x += 10 + Mathf.Sin(clock * 2) * 3;
             if (reactionTime > 0f && !positiveReaction) rotation.x += 12f * Mathf.Sin(reactionTime / 0.85f * Mathf.PI);
             RotateJoint(head, rotation, blend);
         }

@@ -6,7 +6,7 @@ using UnityEngine;
 namespace MalatangStory.Game
 {
     /// <summary>厨房の3D操作対象の種類。</summary>
-    public enum KitchenTargetKind { Pot, Kettle, Jar, Scale, Basket, Piece, Bowl, Ingredient }
+    public enum KitchenTargetKind { Pot, Kettle, Jar, Scale, Basket, Piece, Bowl, Ingredient, Spill }
 
     /// <summary>厨房で直接タップ・ドラッグできる物の目印。</summary>
     public sealed class KitchenTarget : MonoBehaviour
@@ -22,10 +22,11 @@ namespace MalatangStory.Game
     /// ・茹で中の網じゃくの具材は茹で加減に応じて色と艶が変わり、湯気と泡が立つ
     /// ・湯切りは網じゃくを上下にドラッグ、スープは鍋を長押し、調味料は瓶をタップ
     /// </summary>
-    public sealed class KitchenStation
+    public sealed partial class KitchenStation
     {
         private const float BowlSize = .44f, PieceScale = .8f;
         /// <summary>白い具材が映えるよう、器は淡い青磁色にする。</summary>
+        public static Color Glaze(string style) => style == "paper" ? new Color(.94f, .85f, .68f) : style == "jade" ? new Color(.28f, .6f, .48f) : style == "lantern" ? new Color(.55f, .12f, .09f) : style == "cafe" ? new Color(.86f, .94f, .87f) : style == "teahouse" ? new Color(.26f, .37f, .28f) : style == "neon" ? new Color(.2f, .24f, .35f) : BowlGlaze;
         public static readonly Color BowlGlaze = new Color(.78f, .87f, .9f);
 
         private readonly RestaurantWorld world;
@@ -183,6 +184,7 @@ namespace MalatangStory.Game
             UpdateTongs(deltaTime);
             UpdatePourStream();
             UpdatePaintedGarnishes();
+            UpdateCounterSpill(deltaTime, cookingMode);
         }
 
         private const float GarnishReferenceRadius = .38f;
@@ -434,7 +436,7 @@ namespace MalatangStory.Game
         private void CreateWorkBowl(Vector3 position)
         {
             var bowlMesh = MeshFactory.Bowl();
-            var go = StoreBuilder.Part("Work Bowl", bowlMesh, MaterialLibrary.Lit(BowlGlaze, .8f), position, Vector3.one * StoreBuilder.Fit(bowlMesh, BowlSize), root);
+            var go = StoreBuilder.Part("Work Bowl", bowlMesh, MaterialLibrary.Lit(Glaze(order?.takeout == true ? "paper" : Sim.State.collectionBowl ? "jade" : Sim.State.theme), .8f), position, Vector3.one * StoreBuilder.Fit(bowlMesh, BowlSize), root);
             var collider = go.AddComponent<MeshCollider>(); collider.sharedMesh = bowlMesh;
             AddCatchColliders(go.transform);
             go.AddComponent<KitchenTarget>().Set(KitchenTargetKind.Bowl, 0);
@@ -489,7 +491,7 @@ namespace MalatangStory.Game
             var view = piece.GetComponent<IngredientView>();
             if (cooked && view != null) { view.SetDoneness(Sim.Doneness(this.order, index)); view.SetWet(.8f); }
             piece.AddComponent<KitchenTarget>().Set(KitchenTargetKind.Piece, index);
-            piece.AddComponent<SettleBody>();
+            piece.AddComponent<SettleBody>().Bowl = bowl;
             bowlPieces.Add(piece);
         }
 
@@ -757,7 +759,8 @@ namespace MalatangStory.Game
         public GameObject CreateServedBowl(CustomerOrder o, Vector3 position)
         {
             var bowlMesh = MeshFactory.Bowl();
-            var go = StoreBuilder.Part("Served Bowl " + o.id, bowlMesh, MaterialLibrary.Lit(BowlGlaze, .8f), position, Vector3.one * StoreBuilder.Fit(bowlMesh, ServedSize), root);
+            var go = StoreBuilder.Part("Served Bowl " + o.id, bowlMesh, MaterialLibrary.Lit(Glaze(o.bowlStyle), o.bowlStyle == "paper" ? .15f : .8f), position, Vector3.one * StoreBuilder.Fit(bowlMesh, ServedSize), root);
+            BowlAccessories.Add(go.transform, o.bowlStyle, o.takeout && o.stage == OrderStage.Served);
             var soup = Content.Soup(string.IsNullOrEmpty(o.chosenSoup) ? o.soup : o.chosenSoup);
             float h = bowlMesh.bounds.size.y;
             float surfaceRadius = soup.Id == "dry" ? .32f : .44f;
@@ -768,6 +771,13 @@ namespace MalatangStory.Game
             var steamFx = EffectsFactory.Steam(go.transform, o.mealFinished ? 0f : SoupAppearance.ForSoup(soup.Id, o.chosenSpice).SteamIntensity);
             steamFx.transform.localPosition = new Vector3(0, h * .74f, 0);
             steamFx.gameObject.AddComponent<BowlSteam>().Initialize(steamFx, o, Sim.State);
+            if (o.takeout && o.stage == OrderStage.Served)
+            {
+                foreach (var ingredient in go.GetComponentsInChildren<IngredientView>())
+                    foreach (var renderer in ingredient.GetComponentsInChildren<Renderer>()) renderer.forceRenderingOff = true;
+                foreach (var renderer in surface.GetComponentsInChildren<Renderer>()) renderer.forceRenderingOff = true;
+                foreach (var renderer in garnishes.GetComponentsInChildren<Renderer>()) renderer.forceRenderingOff = true;
+            }
             return go;
         }
 
@@ -797,6 +807,7 @@ namespace MalatangStory.Game
                 var soup = Content.Soup(string.IsNullOrEmpty(o.chosenSoup) ? o.soup : o.chosenSoup);
                 view.SetWet(1); view.SetSoupLevel(surface.position.y, new Color(soup.R, soup.G, soup.B));
             }
+            SoupVisuals.AddContactOil(surface, servedPieces);
             MealBowlView meal = servedBowl.gameObject.AddComponent<MealBowlView>();
             meal.Initialize(servedPieces, o.mealFinished ? o.leftovers : MealLeftovers.Evaluate(o, catalog), surface, garnishes, soupHeight / .72f);
             if (o.mealFinished) meal.ApplyProgress(1f, 0f, false);
@@ -807,10 +818,14 @@ namespace MalatangStory.Game
         public GameObject CreateLeftoverBowl(MealRemains remains, Vector3 position)
         {
             CustomerOrder order = new CustomerOrder { id = remains.orderId, soup = remains.soup, chosenSoup = remains.soup,
-                chosenSpice = remains.spice, selected = remains.selected, condiments = remains.condiments, garnishStrokes = remains.garnishStrokes,
+                bowlStyle = remains.bowlStyle, chosenSpice = remains.spice, selected = remains.selected, condiments = remains.condiments, garnishStrokes = remains.garnishStrokes,
                 mealFinished = true, leftovers = remains.leftovers };
             GameObject bowl = CreateServedBowl(order, position);
             bowl.name = "Leftover Bowl " + remains.orderId;
+            if (remains.tipFen > 0)
+                for (int i = 0; i < 3; i++)
+                    StoreBuilder.Part("Tip Coin", MeshFactory.Cylinder(.035f, .008f), MaterialLibrary.Lit(new Color(.85f, .63f, .22f), .6f, .65f),
+                        new Vector3(.7f + i * .07f, .025f + i * .007f, .15f + i * .035f), Vector3.one, bowl.transform, null, false);
             return bowl;
         }
 
@@ -878,6 +893,7 @@ namespace MalatangStory.Game
             var sim = Sim;
             switch (target.Kind)
             {
+                case KitchenTargetKind.Spill: WipeCounterNow(); return true;
                 case KitchenTargetKind.Ingredient:
                     if (o == null || o.stage != OrderStage.Selecting || target.Index < 0 || target.Index >= displaySnapshot.CoolerItems.Count) return true;
                     var ingredient = displaySnapshot.CoolerItems[target.Index];
@@ -923,7 +939,21 @@ namespace MalatangStory.Game
     public sealed class SettleBody : MonoBehaviour
     {
         private float time;
+        public Transform Bowl;
         private Rigidbody body;
+        private void FixedUpdate()
+        {
+            if (body == null || body.isKinematic || Bowl == null) return;
+            Vector3 offset = body.position - Bowl.position;
+            var horizontal = new Vector2(offset.x, offset.z);
+            // 細長い具材が接触解決で縁をすり抜けても、見えない床下へ失われないよう器の内側へ戻す。
+            if (offset.y < .025f || horizontal.magnitude > .23f && offset.y < .28f)
+            {
+                horizontal = Vector2.ClampMagnitude(horizontal, .15f);
+                body.position = Bowl.position + new Vector3(horizontal.x, Mathf.Max(.08f, offset.y), horizontal.y);
+                body.linearVelocity = new Vector3(0, Mathf.Max(0, body.linearVelocity.y), 0);
+            }
+        }
         private void Start() { body = GetComponent<Rigidbody>(); }
         private void Update()
         {

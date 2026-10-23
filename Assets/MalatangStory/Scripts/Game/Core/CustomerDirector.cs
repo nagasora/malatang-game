@@ -39,7 +39,7 @@ namespace MalatangStory.Game
         /// <summary>客と注文を1件作る。通常食材の在庫がない場合は null。</summary>
         public CustomerOrder Create(string forcedArchetype = null, string groupId = "")
         {
-            var stocked = sim.Unlocks.NormalAvailable.Where(x => sim.Available(x.id) > 0).OrderBy(x => x.id, StringComparer.Ordinal).ToArray();
+            var stocked = sim.Unlocks.NormalAvailable.Where(x => sim.Available(x.id) > 0 && (!S.festivalStall || S.stallMenu.Contains(x.id))).OrderBy(x => x.id, StringComparer.Ordinal).ToArray();
             if (stocked.Length == 0) return null;
             var random = RandomFor(forcedArchetype == null ? 0 : forcedArchetype.Length);
             var weather = Content.Weather(S.weather);
@@ -119,8 +119,17 @@ namespace MalatangStory.Game
 
             float ambienceBonus = Math.Min(.3f, Math.Max(0, DiningLayout.Ambience(S)) * .01f);
             order.patience = archetype.Patience * (1 + ambienceBonus) * (regular != null ? 1.2f : 1f) * Skills.Patience(S) * (S.tutorialComplete ? 1f : 10f);
+            if (S.deliveryEnabled && !S.festivalStall && string.IsNullOrEmpty(S.challengeMode) && S.staff.Any(x => x.role == StaffRole.Courier && !x.resting) && string.IsNullOrEmpty(order.groupId) && !archetype.Child && random.NextDouble() < .15)
+            { order.delivery = true; order.takeout = true; order.style = OrderStyle.Ordered; order.customerName = "出前・" + order.customerName; }
             CustomerWishes.Assign(S, order, regular, random, sim.Catalog);
             ChallengeRules.ApplyOrder(S, order, sim.Catalog);
+            if (S.festivalStall)
+            {
+                order.takeout = true; order.style = OrderStyle.SelfServe; order.omakase = false; order.usual = false; order.wish = ""; order.signatureId = ""; order.recipeRequest = "";
+                order.requested.RemoveAll(id => !S.stallMenu.Contains(id));
+                if (order.requested.Count == 0) order.requested.Add(stocked[0].id);
+                if (order.requested.Count > 3) order.requested.RemoveRange(3, order.requested.Count - 3);
+            }
             if (order.style == OrderStyle.SelfServe) SelectAll(order);
             S.nextOrderNumber++;
             return order;

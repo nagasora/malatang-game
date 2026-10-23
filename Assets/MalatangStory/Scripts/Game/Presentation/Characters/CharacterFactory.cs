@@ -229,6 +229,12 @@ namespace MalatangStory.Game
                     batch.Line(apron, new Vector3(side * 0.09f, 0.17f, front), new Vector3(side * 0.10f, 0.29f, 0.04f), 0.032f);
                     batch.Line(apron, new Vector3(side * 0.17f, 0.025f, front), new Vector3(side * 0.22f, 0.025f, -0.06f), 0.027f);
                 }
+                if (appearance.embroidery)
+                    for (int ray = 0; ray < 5; ray++)
+                    {
+                        float angle = ray * Mathf.PI * .4f;
+                        batch.Line(new Color(.95f, .74f, .2f), new Vector3(0, .075f, front + .04f), new Vector3(Mathf.Sin(angle) * .045f, .075f + Mathf.Cos(angle) * .045f, front + .04f), .009f);
+                    }
                 batch.Sphere(bottom, new Vector3(0f, -0.075f, front + 0.035f), new Vector3(0.09f, 0.057f, 0.014f));
                 batch.Line(LightColor, new Vector3(-0.078f, -0.025f, front + 0.045f), new Vector3(0.078f, -0.025f, front + 0.045f), 0.009f);
             }

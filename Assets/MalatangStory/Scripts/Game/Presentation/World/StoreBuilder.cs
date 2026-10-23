@@ -28,8 +28,8 @@ namespace MalatangStory.Game
         public static Vector3 PotTop(int index) => new Vector3(PotX[Mathf.Clamp(index, 0, 3)], BackCounterHeight + .02f, BackCounterZ);
         public static Vector3 KettleTop(int index) => new Vector3(2.15f + index * .42f, BackCounterHeight + .02f, 4.95f);
         public static Vector3 JarTop(int index) => new Vector3(4.75f + (index % 4) * .38f, BackCounterHeight + (index / 4) * .42f + .02f, 4.85f);
-        public static Vector3 QueueSpot(int index)
-            => index < 4 ? new Vector3(-3.1f - index * .75f, 0, .95f) : new Vector3(-5.9f, 0, .3f - (index - 4) * .75f);
+        public static Vector3 QueueSpot(int index, int rows = 1)
+            => index < 3 ? new Vector3(-3.1f - index * .75f, 0, .95f) : new Vector3(-2.7f - (index - 3) * .75f, 0, FrontZ(rows) - 1.8f);
         public static Vector3 WaitingSpot(int index) => new Vector3(.2f + (index % 5) * .7f, 0, .45f - (index / 5) * .55f);
 
         /// <summary>壁飾りスロットの位置と向き（壁の法線方向）。</summary>
@@ -80,6 +80,23 @@ namespace MalatangStory.Game
         public Transform CashTray { get; private set; }
         private TextMesh storeNameLabel;
         public void SetStoreName(string value) { if (storeNameLabel != null && storeNameLabel.text != value) storeNameLabel.text = value; }
+        public int CitySeed = 4107;
+        public bool RivalActive;
+        private GameObject collectorPennant;
+        public void SetCollectorPennant(bool active)
+        {
+            if (active && collectorPennant == null)
+            {
+                collectorPennant = Part("Collector Pennant", RoundedBox(new Vector3(.5f, .85f, .035f), .02f), MaterialLibrary.Lit(Gold, .35f), new Vector3(2.6f, -.45f, -.12f), Vector3.one, ShopSign, null, false);
+                Label("収\n集", new Vector3(0, 0, -.03f), Quaternion.identity, .025f, Lacquer, collectorPennant.transform);
+            }
+            if (collectorPennant != null) collectorPennant.SetActive(active);
+        }
+        public void SetRivalActive(bool active)
+        {
+            if (RivalActive == active) return;
+            RivalActive = active; city?.SetRivalActive(active);
+        }
         private CityBuilder city;
         private Transform seasonalEntrance;
         private Transform seasonalGroundEntrance;

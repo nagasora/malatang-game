@@ -82,7 +82,7 @@ namespace MalatangStory.Game
         {
             var rt = Rect(name, parent);
             var label = rt.gameObject.AddComponent<Text>();
-            label.font = bold && HeadingFont != null ? HeadingFont : Font; label.text = text; label.fontSize = Mathf.RoundToInt(size * TextScale); label.color = color ?? Ink;
+            label.font = bold && HeadingFont != null ? HeadingFont : Font; label.text = UiText.TranslateSource(text); label.fontSize = Mathf.RoundToInt(size * TextScale); label.color = color ?? Ink;
             label.alignment = align; label.raycastTarget = false; label.supportRichText = false;
             label.fontStyle = bold ? FontStyle.Bold : FontStyle.Normal;
             label.horizontalOverflow = HorizontalWrapMode.Wrap; label.verticalOverflow = VerticalWrapMode.Truncate;
@@ -108,6 +108,30 @@ namespace MalatangStory.Game
             return image;
         }
 
+        private static Color themeAccent = Jade;
+        public static void SetTheme(string id)
+        {
+            themeAccent = id == "neon" ? new Color(.62f, .18f, .43f) : id == "cafe" ? new Color(.43f, .3f, .23f)
+                : id == "lantern" ? new Color(.66f, .24f, .12f) : id == "teahouse" ? new Color(.25f, .41f, .2f) : Jade;
+        }
+        public static void ReceiptPerforations(RectTransform card)
+        {
+            card.localRotation = Quaternion.Euler(0, 0, -.35f);
+            for (int x = 16; x < card.rect.width - 8; x += 18)
+            {
+                var dot = Panel(card, PaperDark, 3, false, "Receipt Perforation");
+                Place(dot.rectTransform, new Vector2(0, 1), new Vector2(x, -61), new Vector2(5, 5));
+            }
+        }
+        public static void LedgerLines(RectTransform parent, int count, float width)
+        {
+            for (int i = 0; i < count; i++)
+            {
+                var line = Panel(parent, new Color(.4f, .3f, .2f, .12f), 1, false, "Ledger Rule");
+                Place(line.rectTransform, new Vector2(0, 1), new Vector2(0, -24 - i * 22), new Vector2(width, 1));
+            }
+        }
+
         public static (Color fill, Color text) Colors(ButtonStyle style)
         {
             switch (style)
@@ -118,7 +142,7 @@ namespace MalatangStory.Game
                 case ButtonStyle.Ghost: return (new Color(1, 1, 1, .0f), Ink);
                 case ButtonStyle.Tab: return (PaperDark, InkSoft);
                 case ButtonStyle.TabActive: return (Lacquer, Paper);
-                default: return (Jade, Paper);
+                default: return (themeAccent, Paper);
             }
         }
 
@@ -160,7 +184,7 @@ namespace MalatangStory.Game
         public static void SetLabel(Button button, string text)
         {
             var label = button.GetComponentInChildren<Text>();
-            if (label != null) label.text = text;
+            if (label != null) label.text = UiText.TranslateSource(text);
         }
 
         /// <summary>横棒のゲージ。戻り値の Fill の anchorMax.x で割合を設定する。</summary>

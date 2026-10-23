@@ -32,6 +32,13 @@ namespace MalatangStory.Editor
             EditorUtility.SetDirty(pipeline);
             Directory.CreateDirectory("Assets/MalatangStory/Resources/Materials");
             CreateMaterialTemplates();
+            const string focusPath="Assets/MalatangStory/Resources/RestaurantFoodFocus.asset";
+            if(AssetDatabase.LoadAssetAtPath<VolumeProfile>(focusPath)==null)
+            {
+                var focusProfile=ScriptableObject.CreateInstance<VolumeProfile>(); AssetDatabase.CreateAsset(focusProfile,focusPath);
+                var focus=focusProfile.Add<DepthOfField>(true); focus.mode.Override(DepthOfFieldMode.Gaussian); focus.hideFlags=HideFlags.None;
+                AssetDatabase.AddObjectToAsset(focus,focusProfile); EditorUtility.SetDirty(focusProfile);
+            }
             var rendererData=AssetDatabase.LoadAssetAtPath<UniversalRendererData>("Assets/MalatangStory/Settings/RestaurantRenderer.asset");
             if(rendererData!=null && rendererData.postProcessData==null)
             {

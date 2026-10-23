@@ -11,7 +11,7 @@ using Touch = UnityEngine.InputSystem.EnhancedTouch.Touch;
 namespace MalatangStory.Game
 {
     /// <summary>ワールドの表示モード。</summary>
-    public enum WorldMode { Title, Overview, Cooking, Build, Register }
+    public enum WorldMode { Title, Overview, Cooking, Build, Register, Stall, Photo }
 
     /// <summary>店内の設備。</summary>
     public enum Station { Register, Fridge, Kitchen, Pass, Table, Door }
@@ -64,6 +64,9 @@ namespace MalatangStory.Game
         private float unavailableSeconds, footstepDistance, lastMovementSpeed = 3.8f;
         private NavMeshPath walkingPath;
         private Font font;
+        private FestivalStallView festivalStall;
+        public bool PhotoDish;
+        public float PhotoYaw, PhotoPitch = 35, PhotoDistance = 14;
         private StoreBuilder store;
         private string themeId;
         private bool seasonHighQuality;
@@ -178,9 +181,12 @@ namespace MalatangStory.Game
             themeId = StoreTheme.NormalizeId(themeId);
             environment = new GameObject("Environment").transform;
             environment.SetParent(transform, false);
-            store = new StoreBuilder(environment, font, builtRows);
+            store = new StoreBuilder(environment, font, builtRows) { CitySeed = s.franchiseNumber == 0 ? 4107 : CustomerDirector.StableHash(s.storeId), RivalActive = s.day >= 7 };
             store.Build(s.storeName);
+            store.Street.VisitorRequested = (seed, kind) => !App.Paused && !(App.UI.Current?.PausesGame ?? false) && App.Simulation.TryWalkInVisitor(seed, kind);
+            store.Street.BicycleBell = () => App.Audio.Play(Sfx.BicycleBell, .1f);
             store.ApplyTheme(themeId);
+            store.SetCollectorPennant(s.collectionPennant);
             Kitchen = new KitchenStation(this, environment, store, App.Catalog);
             Furniture = new FurnitureView(environment, store, font) { CreateMealBowl = Kitchen.CreateLeftoverBowl };
             furnitureSources.Clear();
@@ -273,6 +279,13 @@ namespace MalatangStory.Game
 
         public void SetMode(WorldMode mode)
         {
+            if (mode == WorldMode.Stall && festivalStall == null)
+            {
+                var cart = new GameObject("Festival Stall"); cart.transform.SetParent(environment, false);
+                cart.transform.localPosition = new Vector3(3, 0, StoreLayout.FrontZ(builtRows) - 2.2f);
+                festivalStall = cart.AddComponent<FestivalStallView>(); festivalStall.Initialize(App);
+            }
+            if (festivalStall != null) festivalStall.gameObject.SetActive(App.Simulation.State.festivalStall);
             Mode = mode;
             if (grid != null) grid.gameObject.SetActive(mode == WorldMode.Build);
             if (mode != WorldMode.Overview) { pendingAction = null; pendingTarget = null; }
@@ -557,6 +570,8 @@ namespace MalatangStory.Game
             focusFurnitureRenderers.Clear();
         }
 
+        public void SetCollectorPennant(bool active) => store?.SetCollectorPennant(active);
+
         public void PreviewChef(CharacterAppearance appearance)
         {
             playerRig.ApplyAppearance(appearance);
@@ -677,8 +692,9 @@ namespace MalatangStory.Game
 
         private void Update()
         {
-            store?.SetStoreName(App.Simulation.State.storeName);
             if (App == null || App.Simulation == null || View == null) return;
+            store?.SetStoreName(App.Simulation.State.storeName);
+            store?.SetRivalActive(App.Simulation.State.day >= 7);
             var sim = App.Simulation;
             bool paused = !App.Started || App.Paused || (App.UI.Current != null && App.UI.Current.PausesGame);
             float dt = Time.deltaTime;
@@ -701,7 +717,13 @@ namespace MalatangStory.Game
             else if (playerAgent.velocity.magnitude > .1f) playerRig.SetPose(CharacterPose.Idle);
             UpdatePending();
             agents.Update(dt, paused);
-            Kitchen.Update(dt, Mode == WorldMode.Cooking);
+            int queueCount = 0; foreach (var order in sim.State.orders) if (order.stage == OrderStage.Waiting) queueCount++;
+            store.Street?.SetShopInterest(sim.State.reputation, sim.State.daySeconds / RestaurantSimulation.DayDuration, queueCount, sim.State.phase == DayPhase.Open && string.IsNullOrEmpty(sim.State.challengeMode));
+            float deliveryProgress = -1;
+            foreach (var order in sim.State.orders)
+                if (order.stage == OrderStage.Delivering) { deliveryProgress = order.deliverySeconds / Mathf.Max(1, order.deliveryDuration); break; }
+            store.Street?.SetDeliveryProgress(deliveryProgress);
+            Kitchen.Update(dt, Mode == WorldMode.Cooking || Mode == WorldMode.Photo && PhotoDish);
             if (CarriedOrderId != null && sim.Find(CarriedOrderId)?.stage != OrderStage.Ready) CarryBowl(null);
             UpdateMarkers();
             UpdateInteractionMarker(dt);
@@ -944,6 +966,7 @@ namespace MalatangStory.Game
             float storeSize = StoreLayout.BackWallZ - front;
             Vector3 target, position;
             float fov;
+            lighting.SetPhotoFocus(Mode == WorldMode.Photo && PhotoDish, PhotoDistance);
             switch (Mode)
             {
                 case WorldMode.Title:
@@ -952,6 +975,13 @@ namespace MalatangStory.Game
                     position = target + Quaternion.Euler(28, titleAngle - 30, 0) * new Vector3(0, 0, -storeSize * 2.1f);
                     fov = 30;
                     break;
+                case WorldMode.Photo:
+                    target = PhotoDish ? Kitchen.Focus : center + Vector3.up * .6f;
+                    position = target + Quaternion.Euler(PhotoPitch, PhotoYaw, 0) * Vector3.back * PhotoDistance;
+                    fov = PhotoDish ? 35 : 45; break;
+                case WorldMode.Stall:
+                    target = festivalStall.transform.position + new Vector3(.65f, 1.25f, 0);
+                    position = target + new Vector3(-2.5f, 1.5f, -4.6f); fov = 38; break;
                 case WorldMode.Cooking:
                     var focus = Kitchen.Focus;
                     bool heating = App.Selected != null && App.Selected.stage == OrderStage.Heating;

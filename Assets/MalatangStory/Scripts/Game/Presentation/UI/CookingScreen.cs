@@ -518,6 +518,8 @@ namespace MalatangStory.Game
             portrait.texture = BowlPortrait.Get(o);
             portrait.raycastTarget = false;
             resultPortrait = portrait;
+            var photo = UIKit.Button(overview, "撮影", () => App.BeginPhoto(true), ButtonStyle.Secondary, 17, IconKind.Camera);
+            UIKit.Place(photo.GetComponent<RectTransform>(), new Vector2(1, 1), new Vector2(-8, -8), new Vector2(96, 42));
             RecipeDefinition recipe = Recipes.Find(o.recipe);
             Text recipeLabel = UIKit.Label(overview, recipe == null ? "隠しレシピ：なし" : recipe.Name, 18, recipe == null ? UIKit.InkSoft : UIKit.Lacquer, TextAnchor.UpperLeft, true, "Recipe");
             resultRecipe = recipeLabel;
@@ -556,6 +558,11 @@ namespace MalatangStory.Game
             }
             var comment = UIKit.Label(list, "「" + string.Join(" ", r.comments) + "」", 16, UIKit.InkSoft, TextAnchor.UpperLeft);
             UIKit.Height(comment, 84);
+            if (Sim.CanOfferApology(o))
+            {
+                var apology = UIKit.Button(list, "謝罪のおまけ・コンボを少し回復（食材1個）", () => Sim.OfferApologySide(o.id), ButtonStyle.Secondary, 17, IconKind.Heart);
+                UIKit.Height(apology, 46);
+            }
             var signature = UIKit.Button(content, "名物メニューに登録", () => Sim.RegisterSignature(o.id, ""), ButtonStyle.Gold, 17, IconKind.Star, o.quality >= 75 && S.signatures.Count < 3 && string.IsNullOrEmpty(o.signatureId));
             var srt = signature.GetComponent<RectTransform>();
             srt.anchorMin = new Vector2(0, 0); srt.anchorMax = new Vector2(1, 0); srt.pivot = new Vector2(.5f, 0); srt.offsetMin = new Vector2(0, 66); srt.offsetMax = new Vector2(0, 112);

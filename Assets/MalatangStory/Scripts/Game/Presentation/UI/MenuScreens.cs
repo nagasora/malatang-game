@@ -19,6 +19,9 @@ namespace MalatangStory.Game
             g.sprite = TextureFactory.VerticalGradient(new Color(0, 0, 0, 0), new Color(.08f, .03f, .02f, .65f));
             g.raycastTarget = false;
 
+            var bowlImage = UIKit.Rect("Living Bowl", root).gameObject.AddComponent<RawImage>();
+            UIKit.Place(bowlImage.rectTransform, new Vector2(1, .5f), new Vector2(-32, 35), new Vector2(450, 450)); bowlImage.raycastTarget = false;
+            bowlImage.gameObject.AddComponent<TitleBowlPreview>().Initialize(App, bowlImage);
             var logo = UIKit.Rect("Logo", root);
             UIKit.Place(logo, new Vector2(0, .5f), new Vector2(80, 90), new Vector2(620, 300));
             var seal = UIKit.Panel(logo, UIKit.Lacquer, 20, true, "Seal");

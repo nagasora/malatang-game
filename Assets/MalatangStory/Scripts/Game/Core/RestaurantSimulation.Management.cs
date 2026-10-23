@@ -239,6 +239,7 @@ namespace MalatangStory.Game
             var member = State.staff.FirstOrDefault(x => x.id == id);
             if (member == null) return false;
             State.staff.Remove(member);
+            if (!State.staff.Any(x => x.role == StaffRole.Courier)) State.deliveryEnabled = false;
             Emit(SimEventKind.StaffChanged, id, -1);
             Notify(member.name + "との契約を終了しました。"); Save(); return true;
         }

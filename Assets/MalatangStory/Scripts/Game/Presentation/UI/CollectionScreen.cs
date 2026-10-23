@@ -10,7 +10,7 @@ namespace MalatangStory.Game
     /// </summary>
     public sealed class CollectionScreen : UIScreen
     {
-        private static readonly string[] TabLabels = { "店の物語", "お客さん図鑑", "食材図鑑", "レシピ帳", "ミッション", "記録", "一杯アルバム", "希少食材" };
+        private static readonly string[] TabLabels = { "店の物語", "お客さん図鑑", "食材図鑑", "レシピ帳", "ミッション", "記録", "一杯アルバム", "希少食材", "収集報酬" };
         /// <summary>開いた時に表示するタブ（0:店の物語 1:お客さん図鑑 2:食材図鑑 3:レシピ帳 4:ミッション 5:記録 6:一杯アルバム 7:希少食材）。</summary>
         public static int StartTab;
         private int tab;
@@ -50,7 +50,7 @@ namespace MalatangStory.Game
                 layout.spacing = 8; layout.childControlWidth = true; layout.childControlHeight = true; layout.childForceExpandWidth = false;
             }
             content = UIKit.Rect("Content", body);
-            UIKit.Fill(content, 0, 0, portrait ? 170 : 56, 0);
+            UIKit.Fill(content, 0, 0, portrait ? Mathf.CeilToInt(TabLabels.Length / 4f) * 82 + 6 : 56, 0);
             body.parent.gameObject.AddComponent<PopIn>();
             Rebuild();
         }
@@ -69,7 +69,7 @@ namespace MalatangStory.Game
             for (int i = 0; i < TabLabels.Length; i++)
             {
                 int index = i;
-                UIKit.Height(UIKit.Button(tabs, TabLabels[i], () => { tab = index; Rebuild(); }, tab == i ? ButtonStyle.TabActive : ButtonStyle.Tab, portrait ? 28 : 16), portrait ? 72 : 46, portrait ? 260 : 126);
+                UIKit.Height(UIKit.Button(tabs, TabLabels[i], () => { tab = index; Rebuild(); }, tab == i ? ButtonStyle.TabActive : ButtonStyle.Tab, portrait ? 28 : 16), portrait ? 72 : 46, portrait ? 260 : 110);
             }
             Clear(content);
             if (tab == 0) BuildStory();
@@ -79,7 +79,27 @@ namespace MalatangStory.Game
             else if (tab == 4) BuildMissions();
             else if (tab == 5) BuildRecords();
             else if (tab == 6) BuildAlbum();
-            else BuildIngredients(true);
+            else if (tab == 7) BuildIngredients(true);
+            else BuildRewards();
+        }
+
+        private void BuildRewards()
+        {
+            var list = UIKit.ScrollList(content, 10, 4); UIKit.Fill(list.parent as RectTransform);
+            int percent = CollectionRewards.Percent(S, App.Catalog);
+            var progress = UIKit.Label(list, "食材図鑑の達成率 " + percent + "%", 28, UIKit.Lacquer, TextAnchor.MiddleLeft, true); UIKit.Height(progress, 50);
+            foreach (string id in new[] { "apron", "bowl", "pennant", "title" })
+            {
+                string reward = id;
+                bool selected = id == "apron" ? S.chef.embroidery : id == "bowl" ? S.collectionBowl : id == "pennant" ? S.collectionPennant : S.collectionTitle;
+                bool unlocked = CollectionRewards.UnlockedPercent(S, App.Catalog) >= CollectionRewards.Required(id);
+                var button = UIKit.Button(list, CollectionRewards.Required(id) + "%：" + CollectionRewards.Name(id) + (selected ? " ✓ 使用中" : unlocked ? "・使う" : "・未解禁"), () => {
+                    if (Sim.ChooseCollectionReward(reward, !selected))
+                    { App.World.PreviewChef(S.chef); App.World.SetCollectorPennant(S.collectionPennant); Rebuild(); }
+                }, selected ? ButtonStyle.Gold : ButtonStyle.Secondary, 20, IconKind.Star, unlocked && Sim.CanManage);
+                UIKit.Height(button, 66);
+            }
+            var hint = UIKit.Label(list, "営業前か閉店後に切り替えられます。\n器の色は一杯アルバムにも記録されます。", 18, UIKit.InkSoft, TextAnchor.UpperLeft); UIKit.Height(hint, 70);
         }
 
         private void BuildCustomers()

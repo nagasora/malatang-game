@@ -8,7 +8,7 @@ using UnityEngine.UI;
 namespace MalatangStory.Game
 {
     /// <summary>画面の種類。</summary>
-    public enum GameScreen { Title, Store, Cooking, Shop, Management, Build, Report, Morning, Pause, Settings, Wardrobe, Help, Register, Collection, Accessibility, Preparation, Challenges }
+    public enum GameScreen { Title, Store, Cooking, Shop, Management, Build, Report, Morning, Pause, Settings, Wardrobe, Help, Register, Collection, Accessibility, Preparation, Challenges, Neighbourhood, Stall, Photo }
 
     /// <summary>
     /// 画面の基底クラス。Build で一度だけ部品を作り、以後は Refresh（状態変化時）と Tick（毎フレーム）で中身だけ更新する。
@@ -38,7 +38,12 @@ namespace MalatangStory.Game
         protected abstract void Build(RectTransform root);
         public virtual void Refresh() { }
         public virtual void Tick(float deltaTime) { }
-        public virtual void Close() { if (Root != null) UnityEngine.Object.Destroy(Root.gameObject); }
+        public virtual void Close()
+        {
+            if (Root == null) return;
+            if (UIKit.ReduceMotion || !Application.isPlaying) UnityEngine.Object.Destroy(Root.gameObject);
+            else Root.gameObject.AddComponent<PanelExit>();
+        }
 
         /// <summary>子を全て削除する（部分的な作り直し用）。</summary>
         protected static void Clear(Transform parent)
@@ -163,6 +168,9 @@ namespace MalatangStory.Game
                 case GameScreen.Accessibility: return new AccessibilityScreen();
                 case GameScreen.Preparation: return new PreparationScreen();
                 case GameScreen.Challenges: return new ChallengeScreen();
+                case GameScreen.Neighbourhood: return new NeighbourhoodScreen();
+                case GameScreen.Stall: return new StallScreen();
+                case GameScreen.Photo: return new PhotoScreen();
                 case GameScreen.Wardrobe: return new WardrobeScreen();
                 case GameScreen.Help: return new HelpScreen();
                 case GameScreen.Register: return new RegisterScreen();
@@ -172,6 +180,9 @@ namespace MalatangStory.Game
         }
 
         /// <summary>状態が変わった時に呼ぶ。</summary>
+        public void SetPhotoOverlaysVisible(bool visible)
+        { popupLayer.gameObject.SetActive(visible); toastLayer.gameObject.SetActive(visible); }
+
         public void Refresh()
         {
             hud?.Refresh();
@@ -240,7 +251,7 @@ namespace MalatangStory.Game
             speeches.Clear();
         }
 
-        private void ClearToasts()
+        public void ClearToasts()
         {
             foreach (var t in toasts) if (t.Rect != null) Destroy(t.Rect.gameObject);
             toasts.Clear();
